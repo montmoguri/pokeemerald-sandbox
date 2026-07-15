@@ -554,6 +554,7 @@ struct PokemonStorageSystemData
     u8 monInfoTilemapId;
     u8 displayMonInfoLoadState;
     u8 graphicsLoadState;
+    u8 messageWindowSpriteIds[6]; // SwSh sprite-rendered message window
 };
 
 static void SpriteCB_Arrow(struct Sprite *);
@@ -579,7 +580,6 @@ EWRAM_DATA static u8 sMovingMonOrigBoxPos = 0;
 EWRAM_DATA static u8 sCursorMode = 0;
 EWRAM_DATA static bool8 sJustOpenedBag = 0;
 EWRAM_DATA static bool8 sRefreshDisplayMonGfx = FALSE;
-EWRAM_DATA static u8 sMessageWindowSpriteIds[6] = {0};
 EWRAM_DATA static struct MarkingsMenuSwSh *sMarkMenu = NULL;
 
 // Main tasks
@@ -1836,7 +1836,7 @@ static void Task_InitPokeStorage(u8 taskId)
         SetGpuReg(REG_OFFSET_DISPCNT, 0);
         CpuFill32(0, (void *)VRAM, VRAM_SIZE);
         ResetForPokeStorage();
-        memset(sMessageWindowSpriteIds, MAX_SPRITES, sizeof(sMessageWindowSpriteIds));
+        memset(sStorage->messageWindowSpriteIds, MAX_SPRITES, sizeof(sStorage->messageWindowSpriteIds));
         if (sStorage->isReopening)
         {
             switch (sWhichToReshow)
@@ -4336,10 +4336,12 @@ static bool8 PrintDisplayMonInfo(void)
         switch (sStorage->displayMonInfoLoadState)
         {
         case 0:
+        {
             u8 fontId = GetFontIdToFit(sStorage->displayMon.nickname, font, 0, 56);
             UpdateGenderIconSprite(fontId);
             sStorage->displayMonInfoLoadState++;
             break;
+        }
         case 1:
             UpdateTypeIconsSprite();
             UpdateStatLabelsSprites();
@@ -4576,11 +4578,11 @@ static void CreateMessageWindowSprite(void)
 {
     u8 i;
 
-    if (sMessageWindowSpriteIds[0] != MAX_SPRITES)
+    if (sStorage->messageWindowSpriteIds[0] != MAX_SPRITES)
         return;
 
     LoadCompressedSpriteSheet(&sSpriteSheet_MessageWindow);
-    for (i = 0; i < ARRAY_COUNT(sMessageWindowSpriteIds); i++)
+    for (i = 0; i < ARRAY_COUNT(sStorage->messageWindowSpriteIds); i++)
     {
         u8 spriteId = CreateSprite(&sSpriteTemplate_MessageWindow, 72 + i * 32, 144, 0);
         if (spriteId != MAX_SPRITES)
@@ -4589,7 +4591,7 @@ static void CreateMessageWindowSprite(void)
             gSprites[spriteId].oam.priority = 1;
             gSprites[spriteId].subpriority = 0;
         }
-        sMessageWindowSpriteIds[i] = spriteId;
+        sStorage->messageWindowSpriteIds[i] = spriteId;
     }
 }
 
@@ -4597,12 +4599,12 @@ static void DestroyMessageWindowSprite(void)
 {
     u8 i;
 
-    for (i = 0; i < ARRAY_COUNT(sMessageWindowSpriteIds); i++)
+    for (i = 0; i < ARRAY_COUNT(sStorage->messageWindowSpriteIds); i++)
     {
-        if (sMessageWindowSpriteIds[i] != MAX_SPRITES)
+        if (sStorage->messageWindowSpriteIds[i] != MAX_SPRITES)
         {
-            DestroySprite(&gSprites[sMessageWindowSpriteIds[i]]);
-            sMessageWindowSpriteIds[i] = MAX_SPRITES;
+            DestroySprite(&gSprites[sStorage->messageWindowSpriteIds[i]]);
+            sStorage->messageWindowSpriteIds[i] = MAX_SPRITES;
         }
     }
     FreeSpriteTilesByTag(GFXTAG_MESSAGE_WINDOW);
@@ -5024,7 +5026,7 @@ static void SetBoxMonIconObjMode(u8 boxPosition, u8 objMode)
 
 static void CreatePartyMonsSprites(bool8 visible)
 {
-    u16 i, count;
+    u16 i;
     enum Species species = GetMonData(&gParties[B_TRAINER_PLAYER][0], MON_DATA_SPECIES);
     bool32 isEgg = GetMonData(&gParties[B_TRAINER_PLAYER][0], MON_DATA_IS_EGG);
     u32 personality = GetMonData(&gParties[B_TRAINER_PLAYER][0], MON_DATA_PERSONALITY);
@@ -5035,7 +5037,6 @@ static void CreatePartyMonsSprites(bool8 visible)
         sStorage->partySprites[0] = NULL;
     }
     sStorage->partySprites[0] = CreateMonIconSprite(species, personality, 40, 16, 1, 12, isEgg);
-    count = 1;
     for (i = 1; i < PARTY_SIZE; i++)
     {
         if (sStorage->partySprites[i] != NULL)
@@ -5050,7 +5051,6 @@ static void CreatePartyMonsSprites(bool8 visible)
         {
             personality = GetMonData(&gParties[B_TRAINER_PLAYER][i], MON_DATA_PERSONALITY);
             sStorage->partySprites[i] = CreateMonIconSprite(species, personality, 40,  24 * i + 16, 1, 12, isEgg);
-            count++;
         }
     }
 
@@ -5733,8 +5733,8 @@ static void CreateBoxTitleFrame(u8 boxId)
 
     middleIds[0] = sStorage->boxTitleFrameSprites[1] - gSprites;
     middleIds[1] = sStorage->boxTitleFrameSprites[2] - gSprites;
-    middleSrcs[0] = &sBoxTitleFrame_Gfx[BOX_TITLE_FRAME_SIZE];
-    middleSrcs[1] = &sBoxTitleFrame_Gfx[BOX_TITLE_FRAME_SIZE * 2];
+    middleSrcs[0] = sBoxTitleFrame_Gfx + BOX_TITLE_FRAME_SIZE;
+    middleSrcs[1] = sBoxTitleFrame_Gfx + BOX_TITLE_FRAME_SIZE * 2;
     SetupSpritesForTextPrinting(middleIds, middleSrcs, 2, 1);
 }
 
