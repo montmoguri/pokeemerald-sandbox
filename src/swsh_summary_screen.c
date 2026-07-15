@@ -270,6 +270,8 @@ static EWRAM_DATA struct PokemonSummaryScreenData
     s16 switchCounter; // Used for various switch statement cases that decompress/load graphics or Pokémon data
     u16 monAnimTimer; // tracks time between re-playing mon anims
     u8 monAnimPlayed; // tracks if anim has been played at least once
+    u8 heldMoveSlot; // move slot lifted during the switch-move animation, MOVE_SLOT_COUNT when none
+    u32 heldMoveSlotAnimId; // comfy anim driving the lifted slot, INVALID_COMFY_ANIM when none
 #if SWSH_SUMMARY_SHOW_CONTEST_PAGES
     struct ConditionGraph conditionGraph;
     struct Sprite *conditionSparkles[MAX_CONDITION_SPARKLES];
@@ -277,10 +279,7 @@ static EWRAM_DATA struct PokemonSummaryScreenData
 } *sMonSummaryScreen = NULL;
 
 static EWRAM_DATA u8 sMoveSlotToReplace = 0;
-static EWRAM_DATA u8 sHeldSlot = 0;
-static EWRAM_DATA u32 sHeldAnimId = 0;
 ALIGNED(4) static EWRAM_DATA u8 sAnimDelayTaskId = 0;
-static EWRAM_DATA u8 sStringVar5[8] = {0};
 
 // forward declarations
 static bool8 LoadGraphics(void);
@@ -1865,8 +1864,8 @@ void ShowPokemonSummaryScreen_SwSh(u8 mode, void *mons, u8 monIndex, u8 maxMonIn
 
     sMonSummaryScreen = AllocZeroed(sizeof(*sMonSummaryScreen));
     sMonSummaryScreen->mode = mode;
-    sHeldSlot = MOVE_SLOT_COUNT;
-    sHeldAnimId = INVALID_COMFY_ANIM;
+    sMonSummaryScreen->heldMoveSlot = MOVE_SLOT_COUNT;
+    sMonSummaryScreen->heldMoveSlotAnimId = INVALID_COMFY_ANIM;
     if (monIndex == PC_MON_CHOSEN)
     {
         sMonSummaryScreen->monList.boxMons = GetBoxedMonPtr(gSpecialVar_MonBoxId, 0);
@@ -3317,9 +3316,9 @@ static void CloseMoveSelectMode(u8 taskId)
 
 static void SwitchToMovePositionSwitchMode(u8 taskId)
 {
-    sHeldSlot = sMonSummaryScreen->firstMoveIndex;
-    sMonSummaryScreen->secondMoveIndex = sHeldSlot;
-    LiftMoveSlot(sHeldSlot);
+    sMonSummaryScreen->heldMoveSlot = sMonSummaryScreen->firstMoveIndex;
+    sMonSummaryScreen->secondMoveIndex = sMonSummaryScreen->heldMoveSlot;
+    LiftMoveSlot(sMonSummaryScreen->heldMoveSlot);
     UpdateMoveSlotPalette();
     gTasks[taskId].func = Task_HandleInput_MoveSwitch;
 }
@@ -3327,14 +3326,14 @@ static void SwitchToMovePositionSwitchMode(u8 taskId)
 static void Task_HandleInput_MoveSwitch(u8 taskId)
 {
     s16 *data = gTasks[taskId].data;
-    u8 slot = sHeldSlot;
+    u8 slot = sMonSummaryScreen->heldMoveSlot;
     u8 *spriteIds = &sMonSummaryScreen->spriteIds[SPRITE_ARR_ID_MOVE_SLOT + (slot * MOVE_SLOT_SPRITES_COUNT)];
     u8 typeIconId = sMonSummaryScreen->spriteIds[slot + SPRITE_ARR_ID_TYPE];
     u8 i;
 
-    if (sHeldAnimId != INVALID_COMFY_ANIM)
+    if (sMonSummaryScreen->heldMoveSlotAnimId != INVALID_COMFY_ANIM)
     {
-        s16 animY = ReadComfyAnimValueSmooth(&gComfyAnims[sHeldAnimId]);
+        s16 animY = ReadComfyAnimValueSmooth(&gComfyAnims[sMonSummaryScreen->heldMoveSlotAnimId]);
         for (i = 0; i < MOVE_SLOT_SPRITES_COUNT; i++)
         {
             if (spriteIds[i] != SPRITE_NONE)
@@ -4651,8 +4650,9 @@ static void PrintStats(u8 mode)
     BufferStat(gStringVar4, spD, 3, 3);
     AddTextPrinterParameterized4(windowId, PSS_DEFAULT_FONT, 72 - GetStringWidth(PSS_DEFAULT_FONT, gStringVar4, 0), 36, 0, 0, sTextColors[0], TEXT_SKIP_DRAW, gStringVar4);
 
-    BufferStat(sStringVar5, spe, 4, 3);
-    AddTextPrinterParameterized4(windowId, PSS_DEFAULT_FONT, 144 - GetStringWidth(PSS_DEFAULT_FONT, sStringVar5, 0), 36, 0, 0, sTextColors[0], TEXT_SKIP_DRAW, sStringVar5);
+    u8 stringVar5[8];
+    BufferStat(stringVar5, spe, 4, 3);
+    AddTextPrinterParameterized4(windowId, PSS_DEFAULT_FONT, 144 - GetStringWidth(PSS_DEFAULT_FONT, stringVar5, 0), 36, 0, 0, sTextColors[0], TEXT_SKIP_DRAW, stringVar5);
 
     // Now copy everything to VRAM in one operation
     CopyWindowToVram(windowId, COPYWIN_FULL);
@@ -6446,12 +6446,12 @@ static void LiftMoveSlot(u8 slot)
     config.to = Q_24_8(liftedY);
     config.durationFrames = 1;
     config.easingFunc = ComfyAnimEasing_EaseOutCubic;
-    sHeldAnimId = CreateComfyAnim_Easing(&config);
+    sMonSummaryScreen->heldMoveSlotAnimId = CreateComfyAnim_Easing(&config);
 }
 
 static void DropMoveSlot(void)
 {
-    u8 slot = sHeldSlot;
+    u8 slot = sMonSummaryScreen->heldMoveSlot;
     u8 *spriteIds = &sMonSummaryScreen->spriteIds[SPRITE_ARR_ID_MOVE_SLOT + (slot * MOVE_SLOT_SPRITES_COUNT)];
     s16 homeY = 36 + slot * 18;
     u8 typeIconId = sMonSummaryScreen->spriteIds[slot + SPRITE_ARR_ID_TYPE];
@@ -6480,13 +6480,13 @@ static void DropMoveSlot(void)
     if (cursorId != SPRITE_NONE)
         gSprites[cursorId].invisible = FALSE;
 
-    if (sHeldAnimId != INVALID_COMFY_ANIM)
+    if (sMonSummaryScreen->heldMoveSlotAnimId != INVALID_COMFY_ANIM)
     {
-        ReleaseComfyAnim(sHeldAnimId);
-        sHeldAnimId = INVALID_COMFY_ANIM;
+        ReleaseComfyAnim(sMonSummaryScreen->heldMoveSlotAnimId);
+        sMonSummaryScreen->heldMoveSlotAnimId = INVALID_COMFY_ANIM;
     }
 
-    sHeldSlot = MOVE_SLOT_COUNT;
+    sMonSummaryScreen->heldMoveSlot = MOVE_SLOT_COUNT;
 }
 
 static void AnimateLiftedSlotToTarget(void)
@@ -6494,15 +6494,15 @@ static void AnimateLiftedSlotToTarget(void)
     struct ComfyAnimEasingConfig config;
     s16 targetY = 36 + sMonSummaryScreen->secondMoveIndex * 18 - 8;
 
-    if (sHeldAnimId == INVALID_COMFY_ANIM)
+    if (sMonSummaryScreen->heldMoveSlotAnimId == INVALID_COMFY_ANIM)
         return;
 
     InitComfyAnimConfig_Easing(&config);
-    config.from = gComfyAnims[sHeldAnimId].position;
+    config.from = gComfyAnims[sMonSummaryScreen->heldMoveSlotAnimId].position;
     config.to = Q_24_8(targetY);
     config.durationFrames = 8;
     config.easingFunc = ComfyAnimEasing_EaseOutCubic;
-    InitComfyAnim_Easing(&config, &gComfyAnims[sHeldAnimId]);
+    InitComfyAnim_Easing(&config, &gComfyAnims[sMonSummaryScreen->heldMoveSlotAnimId]);
 }
 
 static void CreateMoveSlotSprites(void)
@@ -6570,7 +6570,7 @@ static void UpdateMoveSlotPalette(void)
     u8 mainPalSlot = IndexOfSpritePaletteTag(TAG_MOVE_SLOT_MAIN);
     u8 focusPalSlot = IndexOfSpritePaletteTag(TAG_MOVE_SLOT_FOCUS);
     bool8 cursorActive = (sMonSummaryScreen->spriteIds[SPRITE_ARR_ID_MOVE_CURSOR] != SPRITE_NONE);
-    bool8 switchModeActive = (sHeldSlot != MOVE_SLOT_COUNT);
+    bool8 switchModeActive = (sMonSummaryScreen->heldMoveSlot != MOVE_SLOT_COUNT);
 
     for (slot = 0; slot < MOVE_SLOT_COUNT; slot++)
     {
@@ -6578,7 +6578,7 @@ static void UpdateMoveSlotPalette(void)
         bool8 isHighlighted;
 
         if (switchModeActive)
-            isHighlighted = (slot == sMonSummaryScreen->secondMoveIndex && slot != sHeldSlot);
+            isHighlighted = (slot == sMonSummaryScreen->secondMoveIndex && slot != sMonSummaryScreen->heldMoveSlot);
         else
             isHighlighted = (cursorActive && slot == sMonSummaryScreen->firstMoveIndex);
 
