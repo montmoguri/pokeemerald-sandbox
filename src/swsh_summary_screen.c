@@ -272,6 +272,7 @@ static EWRAM_DATA struct PokemonSummaryScreenData
     u8 monAnimPlayed; // tracks if anim has been played at least once
     u8 heldMoveSlot; // move slot lifted during the switch-move animation, MOVE_SLOT_COUNT when none
     u32 heldMoveSlotAnimId; // comfy anim driving the lifted slot, INVALID_COMFY_ANIM when none
+    u32 moveCursorAnimId; // comfy anim driving the move cursor's slot-to-slot slide, INVALID_COMFY_ANIM when unallocated
 #if SWSH_SUMMARY_SHOW_CONTEST_PAGES
     struct ConditionGraph conditionGraph;
     struct Sprite *conditionSparkles[MAX_CONDITION_SPARKLES];
@@ -1866,6 +1867,7 @@ void ShowPokemonSummaryScreen_SwSh(u8 mode, void *mons, u8 monIndex, u8 maxMonIn
     sMonSummaryScreen->mode = mode;
     sMonSummaryScreen->heldMoveSlot = MOVE_SLOT_COUNT;
     sMonSummaryScreen->heldMoveSlotAnimId = INVALID_COMFY_ANIM;
+    sMonSummaryScreen->moveCursorAnimId = INVALID_COMFY_ANIM;
     if (monIndex == PC_MON_CHOSEN)
     {
         sMonSummaryScreen->monList.boxMons = GetBoxedMonPtr(gSpecialVar_MonBoxId, 0);
@@ -2548,6 +2550,8 @@ static void PatchPageIndicatorIcons(void)
 
 static void FreeSummaryScreen(void)
 {
+    ReleaseComfyAnim(sMonSummaryScreen->heldMoveSlotAnimId);
+    ReleaseComfyAnim(sMonSummaryScreen->moveCursorAnimId);
     FreeAllWindowBuffers();
     Free(sMonSummaryScreen);
 }
@@ -6385,8 +6389,21 @@ static void CreateMoveCursorSprite(void)
         || sMonSummaryScreen->currPageIndex == PSS_PAGE_CONTEST_MOVES)
     {
         u8 spriteId = CreateSprite(&sSpriteTemplate_MoveCursor, 10, 35, 0);
+        s16 initialY2 = sMonSummaryScreen->firstMoveIndex * 18;
+        struct ComfyAnimEasingConfig config = {
+            .from = Q_24_8(initialY2),
+            .to = Q_24_8(initialY2),
+            .durationFrames = 1,
+            .easingFunc = ComfyAnimEasing_EaseOutCubic,
+        };
+
+        if (sMonSummaryScreen->moveCursorAnimId == INVALID_COMFY_ANIM)
+            sMonSummaryScreen->moveCursorAnimId = CreateComfyAnim_Easing(&config);
+        else
+            InitComfyAnim_Easing(&config, &gComfyAnims[sMonSummaryScreen->moveCursorAnimId]);
+
         sMonSummaryScreen->spriteIds[SPRITE_ARR_ID_MOVE_CURSOR] = spriteId;
-        gSprites[spriteId].y2 = sMonSummaryScreen->firstMoveIndex * 18;
+        gSprites[spriteId].y2 = initialY2;
         gSprites[spriteId].callback = SpriteCB_MoveCursor;
     }
 }
@@ -6398,16 +6415,23 @@ static void DestroyMoveCursorSprite(void)
 
 static void SpriteCB_MoveCursor(struct Sprite *sprite)
 {
-    s16 targetY = sMonSummaryScreen->firstMoveIndex * 18;
-    s16 diff = targetY - sprite->y2;
+    s32 targetY = Q_24_8(sMonSummaryScreen->firstMoveIndex * 18);
+    struct ComfyAnim *anim;
 
-    if (diff != 0)
-    {
-        s16 step = diff / 2;
-        if (step == 0)
-            step = (diff > 0) ? 1 : -1;
-        sprite->y2 += step;
-    }
+    if (sMonSummaryScreen->moveCursorAnimId == INVALID_COMFY_ANIM)
+        return;
+
+    anim = &gComfyAnims[sMonSummaryScreen->moveCursorAnimId];
+
+    if (anim->config.data.easing.to != targetY)
+        InitComfyAnim_Easing(&(struct ComfyAnimEasingConfig){
+            .from = anim->position,
+            .to = targetY,
+            .durationFrames = 6,
+            .easingFunc = ComfyAnimEasing_EaseOutCubic,
+        }, anim);
+
+    sprite->y2 = ReadComfyAnimValueSmooth(anim);
 }
 
 static void LiftMoveSlot(u8 slot)
@@ -6416,7 +6440,12 @@ static void LiftMoveSlot(u8 slot)
     s16 liftedY = 36 + slot * 18 - 8;
     u8 typeIconId = sMonSummaryScreen->spriteIds[slot + SPRITE_ARR_ID_TYPE];
     u8 cursorId = sMonSummaryScreen->spriteIds[SPRITE_ARR_ID_MOVE_CURSOR];
-    struct ComfyAnimEasingConfig config;
+    struct ComfyAnimEasingConfig config = {
+        .from = Q_24_8(liftedY),
+        .to = Q_24_8(liftedY),
+        .durationFrames = 1,
+        .easingFunc = ComfyAnimEasing_EaseOutCubic,
+    };
     u8 i;
 
     for (i = 0; i < MOVE_SLOT_SPRITES_COUNT; i++)
@@ -6441,12 +6470,10 @@ static void LiftMoveSlot(u8 slot)
     if (cursorId != SPRITE_NONE)
         gSprites[cursorId].invisible = TRUE;
 
-    InitComfyAnimConfig_Easing(&config);
-    config.from = Q_24_8(liftedY);
-    config.to = Q_24_8(liftedY);
-    config.durationFrames = 1;
-    config.easingFunc = ComfyAnimEasing_EaseOutCubic;
-    sMonSummaryScreen->heldMoveSlotAnimId = CreateComfyAnim_Easing(&config);
+    if (sMonSummaryScreen->heldMoveSlotAnimId == INVALID_COMFY_ANIM)
+        sMonSummaryScreen->heldMoveSlotAnimId = CreateComfyAnim_Easing(&config);
+    else
+        InitComfyAnim_Easing(&config, &gComfyAnims[sMonSummaryScreen->heldMoveSlotAnimId]);
 }
 
 static void DropMoveSlot(void)
@@ -6480,29 +6507,24 @@ static void DropMoveSlot(void)
     if (cursorId != SPRITE_NONE)
         gSprites[cursorId].invisible = FALSE;
 
-    if (sMonSummaryScreen->heldMoveSlotAnimId != INVALID_COMFY_ANIM)
-    {
-        ReleaseComfyAnim(sMonSummaryScreen->heldMoveSlotAnimId);
-        sMonSummaryScreen->heldMoveSlotAnimId = INVALID_COMFY_ANIM;
-    }
-
     sMonSummaryScreen->heldMoveSlot = MOVE_SLOT_COUNT;
 }
 
 static void AnimateLiftedSlotToTarget(void)
 {
-    struct ComfyAnimEasingConfig config;
+    struct ComfyAnim *anim;
     s16 targetY = 36 + sMonSummaryScreen->secondMoveIndex * 18 - 8;
 
     if (sMonSummaryScreen->heldMoveSlotAnimId == INVALID_COMFY_ANIM)
         return;
 
-    InitComfyAnimConfig_Easing(&config);
-    config.from = gComfyAnims[sMonSummaryScreen->heldMoveSlotAnimId].position;
-    config.to = Q_24_8(targetY);
-    config.durationFrames = 8;
-    config.easingFunc = ComfyAnimEasing_EaseOutCubic;
-    InitComfyAnim_Easing(&config, &gComfyAnims[sMonSummaryScreen->heldMoveSlotAnimId]);
+    anim = &gComfyAnims[sMonSummaryScreen->heldMoveSlotAnimId];
+    InitComfyAnim_Easing(&(struct ComfyAnimEasingConfig){
+        .from = anim->position,
+        .to = Q_24_8(targetY),
+        .durationFrames = 12,
+        .easingFunc = ComfyAnimEasing_EaseOutCubic,
+    }, anim);
 }
 
 static void CreateMoveSlotSprites(void)
