@@ -715,45 +715,14 @@ static void CB2_UpdatePartyMenu(void)
     else if (sItemIconSpriteId != MAX_SPRITES)
         cursorSpriteId = sItemIconSpriteId;
 
+    AdvanceComfyAnimations();
+
     if (cursorSpriteId != MAX_SPRITES)
     {
-        AdvanceComfyAnimations();
-
         if (sPartyMenuInternal->comfyAnimX != INVALID_COMFY_ANIM)
-        {
-            struct ComfyAnim *anim = &gComfyAnims[sPartyMenuInternal->comfyAnimX];
-            if (anim->inUse)
-            {
-                gSprites[cursorSpriteId].x = ReadComfyAnimValueSmooth(anim);
-                if (anim->completed)
-                {
-                    ReleaseComfyAnim(sPartyMenuInternal->comfyAnimX);
-                    sPartyMenuInternal->comfyAnimX = INVALID_COMFY_ANIM;
-                }
-            }
-            else
-            {
-                sPartyMenuInternal->comfyAnimX = INVALID_COMFY_ANIM;
-            }
-        }
-
+            gSprites[cursorSpriteId].x = ReadComfyAnimValueSmooth(&gComfyAnims[sPartyMenuInternal->comfyAnimX]);
         if (sPartyMenuInternal->comfyAnimY != INVALID_COMFY_ANIM)
-        {
-            struct ComfyAnim *anim = &gComfyAnims[sPartyMenuInternal->comfyAnimY];
-            if (anim->inUse)
-            {
-                gSprites[cursorSpriteId].y = ReadComfyAnimValueSmooth(anim);
-                if (anim->completed)
-                {
-                    ReleaseComfyAnim(sPartyMenuInternal->comfyAnimY);
-                    sPartyMenuInternal->comfyAnimY = INVALID_COMFY_ANIM;
-                }
-            }
-            else
-            {
-                sPartyMenuInternal->comfyAnimY = INVALID_COMFY_ANIM;
-            }
-        }
+            gSprites[cursorSpriteId].y = ReadComfyAnimValueSmooth(&gComfyAnims[sPartyMenuInternal->comfyAnimY]);
     }
     AnimateSprites();
     BuildOamBuffer();
@@ -1347,10 +1316,8 @@ static void FreePartyPointers(void)
 
     if (sPartyMenuInternal)
     {
-        if (sPartyMenuInternal->comfyAnimX != INVALID_COMFY_ANIM)
-            ReleaseComfyAnim(sPartyMenuInternal->comfyAnimX);
-        if (sPartyMenuInternal->comfyAnimY != INVALID_COMFY_ANIM)
-            ReleaseComfyAnim(sPartyMenuInternal->comfyAnimY);
+        ReleaseComfyAnim(sPartyMenuInternal->comfyAnimX);
+        ReleaseComfyAnim(sPartyMenuInternal->comfyAnimY);
         Free(sPartyMenuInternal);
     }
     if (sPartyBgTilemapBuffer)
@@ -5681,29 +5648,31 @@ static void DestroyHoverSprite(void)
     }
 }
 
+static void RestartCursorAnim(u8 *animId, s16 from, s16 to, u32 durationFrames)
+{
+    struct ComfyAnimEasingConfig config = {
+        .from = Q_24_8(from),
+        .to = Q_24_8(to),
+        .durationFrames = durationFrames,
+        .easingFunc = ComfyAnimEasing_EaseOutCubic,
+    };
+
+    if (*animId == INVALID_COMFY_ANIM)
+        *animId = CreateComfyAnim_Easing(&config);
+    else
+        InitComfyAnim_Easing(&config, &gComfyAnims[*animId]);
+}
+
 static void InitPartyMenuCursorMove(u8 spriteId, s16 targetX, s16 targetY)
 {
-    struct ComfyAnimEasingConfig config;
+    RestartCursorAnim(&sPartyMenuInternal->comfyAnimX, gSprites[spriteId].x, targetX, 8);
+    RestartCursorAnim(&sPartyMenuInternal->comfyAnimY, gSprites[spriteId].y, targetY, 8);
+}
 
-    // Release old anims
-    if (sPartyMenuInternal->comfyAnimX != INVALID_COMFY_ANIM)
-        ReleaseComfyAnim(sPartyMenuInternal->comfyAnimX);
-    if (sPartyMenuInternal->comfyAnimY != INVALID_COMFY_ANIM)
-        ReleaseComfyAnim(sPartyMenuInternal->comfyAnimY);
-
-    InitComfyAnimConfig_Easing(&config);
-    config.durationFrames = 8;
-    config.easingFunc = ComfyAnimEasing_EaseOutCubic;
-
-    // X
-    config.from = Q_24_8(gSprites[spriteId].x);
-    config.to = Q_24_8(targetX);
-    sPartyMenuInternal->comfyAnimX = CreateComfyAnim_Easing(&config);
-
-    // Y
-    config.from = Q_24_8(gSprites[spriteId].y);
-    config.to = Q_24_8(targetY);
-    sPartyMenuInternal->comfyAnimY = CreateComfyAnim_Easing(&config);
+static void SnapPartyMenuCursor(s16 x, s16 y)
+{
+    RestartCursorAnim(&sPartyMenuInternal->comfyAnimX, x, x, 1);
+    RestartCursorAnim(&sPartyMenuInternal->comfyAnimY, y, y, 1);
 }
 
 static void CreateItemIconSprite(struct PartyMenuBox *menuBox, u8 slot, enum Item item)
@@ -5727,16 +5696,7 @@ static void CreateItemIconSprite(struct PartyMenuBox *menuBox, u8 slot, enum Ite
             gSprites[sItemIconSpriteId].y = y;
             gSprites[sItemIconSpriteId].oam.priority = 1;
             gSprites[sItemIconSpriteId].subpriority = 2;
-            if (sPartyMenuInternal->comfyAnimX != INVALID_COMFY_ANIM)
-            {
-                ReleaseComfyAnim(sPartyMenuInternal->comfyAnimX);
-                sPartyMenuInternal->comfyAnimX = INVALID_COMFY_ANIM;
-            }
-            if (sPartyMenuInternal->comfyAnimY != INVALID_COMFY_ANIM)
-            {
-                ReleaseComfyAnim(sPartyMenuInternal->comfyAnimY);
-                sPartyMenuInternal->comfyAnimY = INVALID_COMFY_ANIM;
-            }
+            SnapPartyMenuCursor(x, y);
         }
     }
 }
@@ -5794,16 +5754,7 @@ static void CreateHoverSprite(struct PartyMenuBox *menuBox, u8 slot)
             {
                 gSprites[sCursorSpriteId].oam.priority = 1;
                 gSprites[sCursorSpriteId].subpriority = 2;
-                if (sPartyMenuInternal->comfyAnimX != INVALID_COMFY_ANIM)
-                {
-                    ReleaseComfyAnim(sPartyMenuInternal->comfyAnimX);
-                    sPartyMenuInternal->comfyAnimX = INVALID_COMFY_ANIM;
-                }
-                if (sPartyMenuInternal->comfyAnimY != INVALID_COMFY_ANIM)
-                {
-                    ReleaseComfyAnim(sPartyMenuInternal->comfyAnimY);
-                    sPartyMenuInternal->comfyAnimY = INVALID_COMFY_ANIM;
-                }
+                SnapPartyMenuCursor(x, y);
             }
         }
     }
@@ -5813,7 +5764,18 @@ static void CreateHoverSprite(struct PartyMenuBox *menuBox, u8 slot)
 // mon2 held item sprite is updated when the moving sprite finishes animation
 static void SpriteCB_ItemSwap(struct Sprite *sprite)
 {
-    struct ComfyAnim *anim = &gComfyAnims[sprite->data[1]];
+    struct ComfyAnim *anim;
+
+    if (sprite->data[1] == INVALID_COMFY_ANIM)
+    {
+        FreeSpriteTilesByTag(sprite->data[6]);
+        FreeSpritePaletteByTag(sprite->data[6]);
+        DestroySprite(sprite);
+        UpdatePartyMonHeldItemSprite(&gParties[B_TRAINER_PLAYER][sprite->data[0]], &sPartyMenuBoxes[sprite->data[0]]);
+        return;
+    }
+
+    anim = &gComfyAnims[sprite->data[1]];
 
     if (anim->completed)
     {
@@ -5860,7 +5822,6 @@ static void SpriteCB_ItemSwap(struct Sprite *sprite)
 
 static void InitItemSwapMotion(struct Sprite *sprite, u8 destSlot, u16 tag, bool8 clockwise)
 {
-    struct ComfyAnimEasingConfig config;
     int dx, dy, duration;
 
     sprite->data[0] = destSlot;
@@ -5878,12 +5839,12 @@ static void InitItemSwapMotion(struct Sprite *sprite, u8 destSlot, u16 tag, bool
     duration = (dx + dy) / 8 + 12;
     if (duration > 30) duration = 30;
 
-    InitComfyAnimConfig_Easing(&config);
-    config.from = Q_24_8(0);
-    config.to = Q_24_8(256);
-    config.durationFrames = duration;
-    config.easingFunc = ComfyAnimEasing_EaseInOutCubic;
-    sprite->data[1] = CreateComfyAnim_Easing(&config);
+    sprite->data[1] = CreateComfyAnim_Easing(&(struct ComfyAnimEasingConfig){
+        .from = Q_24_8(0),
+        .to = Q_24_8(256),
+        .durationFrames = duration,
+        .easingFunc = ComfyAnimEasing_EaseInOutCubic,
+    });
 
     sprite->callback = SpriteCB_ItemSwap;
 }
@@ -5897,25 +5858,16 @@ static void CreateItemMoveSprite(u8 fromSlot, u8 toSlot, enum Item item)
     DestroyItemIconSprite();
     sItemIconSpriteId = MAX_SPRITES;
 
+    s16 cursorX = sPartyMenuBoxes[fromSlot].spriteCoords[0] - 18;
+    s16 cursorY = sPartyMenuBoxes[fromSlot].spriteCoords[1] + 3;
+
     DestroyHoverSprite();
-    sCursorSpriteId = CreateSprite(&sSpriteTemplate_Cursor,
-                                    sPartyMenuBoxes[fromSlot].spriteCoords[0] - 18,
-                                    sPartyMenuBoxes[fromSlot].spriteCoords[1] + 3,
-                                    1);
+    sCursorSpriteId = CreateSprite(&sSpriteTemplate_Cursor, cursorX, cursorY, 1);
     if (sCursorSpriteId != MAX_SPRITES)
     {
         gSprites[sCursorSpriteId].oam.priority = 1;
         gSprites[sCursorSpriteId].subpriority = 2;
-        if (sPartyMenuInternal->comfyAnimX != INVALID_COMFY_ANIM)
-        {
-            ReleaseComfyAnim(sPartyMenuInternal->comfyAnimX);
-            sPartyMenuInternal->comfyAnimX = INVALID_COMFY_ANIM;
-        }
-        if (sPartyMenuInternal->comfyAnimY != INVALID_COMFY_ANIM)
-        {
-            ReleaseComfyAnim(sPartyMenuInternal->comfyAnimY);
-            sPartyMenuInternal->comfyAnimY = INVALID_COMFY_ANIM;
-        }
+        SnapPartyMenuCursor(cursorX, cursorY);
     }
 
     // 2. Clear existing icons so UpdatePartyMonHeldItemSprite loads new graphics
