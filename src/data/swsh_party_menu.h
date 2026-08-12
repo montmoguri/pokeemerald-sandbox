@@ -88,7 +88,6 @@ static const struct
     struct PartyBoxRect level;
     struct PartyBoxRect gender;
     struct PartyBoxRect hp;
-    struct PartyBoxRect maxHp;
     struct PartyBoxRect hpBar;
     struct PartyBoxRect descText;
 } sPartySlotLayout =
@@ -96,8 +95,7 @@ static const struct
     .nickname = { 32,  0, 48, 13 },
     .level    = { 80, 11, 32,  8 },
     .gender   = { 91,  0,  8,  8 },
-    .hp       = { 32, 11, 24,  8 },
-    .maxHp    = { 47, 11, 24,  8 },
+    .hp       = { 32, 11, 48,  8 },
     .hpBar    = { 32, 12, 64,  2 },
     .descText = { 32, 11, 64, 12 },
 };

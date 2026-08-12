@@ -324,8 +324,7 @@ static void DisplayPartyPokemonData(u8);
 static void DisplayPartyPokemonNickname(struct Pokemon *, struct PartyMenuBox *, u8);
 static void DisplayPartyPokemonLevelCheck(struct Pokemon *, struct PartyMenuBox *, u8);
 static void DisplayPartyPokemonGenderNidoranCheck(struct Pokemon *, struct PartyMenuBox *, u8);
-static void DisplayPartyPokemonHPCheck(struct Pokemon *, struct PartyMenuBox *, u8);
-static void DisplayPartyPokemonMaxHPCheck(struct Pokemon *, struct PartyMenuBox *, u8);
+static void DisplayPartyPokemonHPCheck(struct Pokemon *, struct PartyMenuBox *, bool8);
 static void DisplayPartyPokemonHPBarCheck(struct Pokemon *, struct PartyMenuBox *);
 static void DisplayPartyPokemonDescriptionText(u8, struct PartyMenuBox *, u8);
 static bool8 IsMonAllowedInMinigame(u8);
@@ -338,7 +337,6 @@ static void DisplayPartyPokemonGender(u8, enum Species, u8 *, struct PartyMenuBo
 static void RefreshPartySlotGenderPalette(struct PartyMenuBox *, bool8);
 static void RefreshPartySlotHPBarPalette(struct PartyMenuBox *);
 static void DisplayPartyPokemonHP(u16 hp, u16 maxHp, struct PartyMenuBox *menuBox);
-static void DisplayPartyPokemonMaxHP(u16, struct PartyMenuBox *);
 static void DisplayPartyPokemonHPBar(u16, u16, struct PartyMenuBox *);
 static void CreatePartyMonIconSpriteParameterized(enum Species, u32, bool32, struct PartyMenuBox *, u8);
 static void CreatePartyMonHeldItemSpriteParameterized(enum Species, enum Item, struct PartyMenuBox *);
@@ -1429,8 +1427,7 @@ static void DisplayPartyPokemonData(u8 slot)
         DisplayPartyPokemonNickname(mon, &sPartyMenuBoxes[slot], 0);
         DisplayPartyPokemonLevelCheck(mon, &sPartyMenuBoxes[slot], 0);
         DisplayPartyPokemonGenderNidoranCheck(mon, &sPartyMenuBoxes[slot], 0);
-        DisplayPartyPokemonHPCheck(mon, &sPartyMenuBoxes[slot], 0);
-        DisplayPartyPokemonMaxHPCheck(mon, &sPartyMenuBoxes[slot], 0);
+        DisplayPartyPokemonHPCheck(mon, &sPartyMenuBoxes[slot], FALSE);
         DisplayPartyPokemonHPBarCheck(mon, &sPartyMenuBoxes[slot]);
     }
 }
@@ -1695,7 +1692,6 @@ static void DisplayPartyPokemonDataForMultiBattle(u8 slot)
         DisplayPartyPokemonLevel(gMultiPartnerParty[actualSlot].level, menuBox);
         DisplayPartyPokemonGender(gMultiPartnerParty[actualSlot].gender, gMultiPartnerParty[actualSlot].species, gMultiPartnerParty[actualSlot].nickname, menuBox, FALSE);
         DisplayPartyPokemonHP(gMultiPartnerParty[actualSlot].hp, gMultiPartnerParty[actualSlot].maxhp, menuBox);
-        DisplayPartyPokemonMaxHP(gMultiPartnerParty[actualSlot].maxhp, menuBox);
         DisplayPartyPokemonHPBar(gMultiPartnerParty[actualSlot].hp, gMultiPartnerParty[actualSlot].maxhp, menuBox);
     }
 }
@@ -2630,7 +2626,7 @@ static void Task_PartyMenuModifyHP(u8 taskId)
     tHP += tHPIncrement;
     tHPToAdd--;
     SetMonData(&gParties[B_TRAINER_PLAYER][tPartyId], MON_DATA_HP, &tHP);
-    DisplayPartyPokemonHPCheck(&gParties[B_TRAINER_PLAYER][tPartyId], &sPartyMenuBoxes[tPartyId], 1);
+    DisplayPartyPokemonHPCheck(&gParties[B_TRAINER_PLAYER][tPartyId], &sPartyMenuBoxes[tPartyId], TRUE);
     DisplayPartyPokemonHPBarCheck(&gParties[B_TRAINER_PLAYER][tPartyId], &sPartyMenuBoxes[tPartyId]);
     if (tHPToAdd == 0 || tHP == 0 || tHP == tMaxHP)
     {
@@ -3290,17 +3286,15 @@ static void ExpandBoundingRect(int *left, int *top, int *right, int *bottom, con
     if (b > *bottom) *bottom = b;
 }
 
-// Mont note: because of how cramped together nickname, HP, and MaxHP are in the party menu boxes,
-// we clear and redraw both HP and MaxHP areas together to avoid visual glitches
-static void RedrawPartyMonInfo(struct Pokemon *mon, struct PartyMenuBox *menuBox, bool8 redrawHp, bool8 redrawMaxHP, bool8 redrawLevel, bool8 redrawGender)
+// Mont note: because of how cramped together nickname and HP are in the party menu boxes,
+// we clear and redraw the whole HP area together to avoid visual glitches
+static void RedrawPartyMonInfo(struct Pokemon *mon, struct PartyMenuBox *menuBox, bool8 redrawHp, bool8 redrawLevel, bool8 redrawGender)
 {
     int left    = sPartySlotLayout.hp.x;
     int top     = sPartySlotLayout.hp.y;
-    int right   = left + sPartySlotLayout.hp.width + 8;
+    int right   = left + sPartySlotLayout.hp.width;
     int bottom  = top + sPartySlotLayout.hp.height;
 
-    if (redrawMaxHP)
-        ExpandBoundingRect(&left, &top, &right, &bottom, &sPartySlotLayout.maxHp);
     if (redrawLevel)
         ExpandBoundingRect(&left, &top, &right, &bottom, &sPartySlotLayout.level);
     if (redrawGender)
@@ -3312,8 +3306,6 @@ static void RedrawPartyMonInfo(struct Pokemon *mon, struct PartyMenuBox *menuBox
                                     ((bottom - 1) >> 3) - (top >> 3) + 1,
                                     FALSE);
 
-    if (redrawMaxHP)
-        DisplayPartyPokemonMaxHP(GetMonData(mon, MON_DATA_MAX_HP), menuBox);
     if (redrawHp)
         DisplayPartyPokemonHP(GetMonData(mon, MON_DATA_HP), GetMonData(mon, MON_DATA_MAX_HP), menuBox);
     if (redrawLevel)
@@ -3324,59 +3316,24 @@ static void RedrawPartyMonInfo(struct Pokemon *mon, struct PartyMenuBox *menuBox
     DisplayPartyPokemonNickname(mon, menuBox, 0);
 }
 
-static void DisplayPartyPokemonHPCheck(struct Pokemon *mon, struct PartyMenuBox *menuBox, u8 c)
+static void DisplayPartyPokemonHPCheck(struct Pokemon *mon, struct PartyMenuBox *menuBox, bool8 clearFirst)
 {
     if (GetMonData(mon, MON_DATA_SPECIES) != SPECIES_NONE)
     {
-        if (c != 0)
-            RedrawPartyMonInfo(mon, menuBox, FALSE, TRUE, FALSE, FALSE);
-        if (c != 2)
-            DisplayPartyPokemonHP(GetMonData(mon, MON_DATA_HP), GetMonData(mon, MON_DATA_MAX_HP), menuBox);
+        if (clearFirst)
+            RedrawPartyMonInfo(mon, menuBox, TRUE, FALSE, FALSE);
+        DisplayPartyPokemonHP(GetMonData(mon, MON_DATA_HP), GetMonData(mon, MON_DATA_MAX_HP), menuBox);
     }
-}
-
-static void DisplayParty4DigitsHP_ShiftRight(struct PartyMenuBox *menuBox, const u8 *str, const struct PartyBoxRect *origRect, u32 toAdd)
-{
-    struct PartyBoxRect rect = *origRect;
-
-    rect.x += toAdd; // shift right for SwSh style
-    DisplayPartyPokemonBarDetail(menuBox->windowId, str, 0, &rect);
 }
 
 static void DisplayPartyPokemonHP(u16 hp, u16 maxhp, struct PartyMenuBox *menuBox)
 {
-    bool32 fourDigits = (maxhp >= 1000);
-    u8 *strOut = ConvertIntToDecimalStringN(gStringVar1, hp, STR_CONV_MODE_RIGHT_ALIGN, fourDigits ? 4 : 3);
+    u8 *str = ConvertIntToDecimalStringN(gStringVar1, hp, STR_CONV_MODE_LEFT_ALIGN, 4);
 
-    strOut[0] = CHAR_SLASH;
-    strOut[1] = EOS;
+    *str++ = CHAR_SLASH;
+    ConvertIntToDecimalStringN(str, maxhp, STR_CONV_MODE_LEFT_ALIGN, 4);
 
     DisplayPartyPokemonBarDetail(menuBox->windowId, gStringVar1, 0, &sPartySlotLayout.hp);
-}
-
-static void DisplayPartyPokemonMaxHPCheck(struct Pokemon *mon, struct PartyMenuBox *menuBox, u8 c)
-{
-    if (GetMonData(mon, MON_DATA_SPECIES) != SPECIES_NONE)
-    {
-        if (c != 0)
-            RedrawPartyMonInfo(mon, menuBox, TRUE, TRUE, FALSE, FALSE);
-        if (c != 2)
-            DisplayPartyPokemonMaxHP(GetMonData(mon, MON_DATA_MAX_HP), menuBox);
-    }
-}
-
-static void DisplayPartyPokemonMaxHP(u16 maxhp, struct PartyMenuBox *menuBox)
-{
-    bool32 fourDigits = (maxhp >= 1000);
-
-    ConvertIntToDecimalStringN(gStringVar2, maxhp, STR_CONV_MODE_RIGHT_ALIGN, fourDigits ? 4 : 3);
-    StringCopy(gStringVar1, gText_Slash);
-    StringAppend(gStringVar1, gStringVar2);
-
-    if (fourDigits)
-        DisplayParty4DigitsHP_ShiftRight(menuBox, gStringVar1, &sPartySlotLayout.maxHp, 5);
-    else
-        DisplayPartyPokemonBarDetail(menuBox->windowId, gStringVar1, 0, &sPartySlotLayout.maxHp);
 }
 
 static void DisplayPartyPokemonHPBarCheck(struct Pokemon *mon, struct PartyMenuBox *menuBox)
@@ -7516,7 +7473,7 @@ void ItemUseCB_RareCandy(u8 taskId, TaskFunc task)
 static void UpdateMonDisplayInfoAfterRareCandy(u8 slot, struct Pokemon *mon)
 {
     SetPartyMonAilmentGfx(mon, &sPartyMenuBoxes[slot]);
-    RedrawPartyMonInfo(mon, &sPartyMenuBoxes[slot], TRUE, TRUE, TRUE, TRUE);
+    RedrawPartyMonInfo(mon, &sPartyMenuBoxes[slot], TRUE, TRUE, TRUE);
     DisplayPartyPokemonHPBarCheck(mon, &sPartyMenuBoxes[slot]);
     UpdatePartyMonHPBar(sPartyMenuBoxes[slot].monSpriteId, mon);
     AnimatePartySlot(slot, 1);
