@@ -313,7 +313,10 @@ static void SwitchToMovePositionSwitchMode(u8);
 static void Task_HandleInput_MoveSwitch(u8);
 static void ExitMovePositionSwitchMode(u8, bool8);
 static void LiftMoveSlot(u8);
-static void DropMoveSlot(void);
+static void DropMoveSlot(u8);
+static void SetMoveSlotSpritesRow(u8, u8);
+static void SwapMoveSlotSpriteIds(u8, u8);
+static void SnapMoveCursorToSlot(void);
 static void AnimateLiftedSlotToTarget(void);
 static void SwapMonMoves(struct Pokemon *, u8, u8);
 static void SwapBoxMonMoves(struct BoxPokemon *, u8, u8);
@@ -385,7 +388,6 @@ static void PrintMoveNameAndPP(u8);
 static void HandleAppealJamTilemap(enum Move);
 static void PrintMoveDescription(enum Move);
 static void PrintNewMoveDetailsOrCancelText(void);
-static void SwapMovesNamesPP(u8, u8);
 static void PrintHMMovesCantBeForgotten(void);
 static void ResetSpriteIds(void);
 static void SetSpriteInvisibility(u8, bool8);
@@ -3378,12 +3380,17 @@ static void Task_HandleInput_MoveSwitch(u8 taskId)
 static void ExitMovePositionSwitchMode(u8 taskId, bool8 swapMoves)
 {
     enum Move move;
+    u8 heldSlot = sMonSummaryScreen->heldMoveSlot;
+    u8 targetSlot = (swapMoves == TRUE) ? sMonSummaryScreen->secondMoveIndex : heldSlot;
 
     PlaySE(SE_SELECT);
-    DropMoveSlot();
+    DropMoveSlot(targetSlot);
 
     if (swapMoves == TRUE)
     {
+        SetMoveSlotSpritesRow(targetSlot, heldSlot);
+        SwapMoveSlotSpriteIds(heldSlot, targetSlot);
+
         if (!sMonSummaryScreen->isBoxMon)
         {
             struct Pokemon *mon = sMonSummaryScreen->monList.mons;
@@ -3395,10 +3402,10 @@ static void ExitMovePositionSwitchMode(u8 taskId, bool8 swapMoves)
             SwapBoxMonMoves(&boxMon[sMonSummaryScreen->curMonIndex], sMonSummaryScreen->firstMoveIndex, sMonSummaryScreen->secondMoveIndex);
         }
         CopyMonToSummaryStruct(&sMonSummaryScreen->currentMon);
-        SwapMovesNamesPP(sMonSummaryScreen->firstMoveIndex, sMonSummaryScreen->secondMoveIndex);
         SwapMovesTypeSprites(sMonSummaryScreen->firstMoveIndex, sMonSummaryScreen->secondMoveIndex);
         sMonSummaryScreen->firstMoveIndex = sMonSummaryScreen->secondMoveIndex;
     }
+    SnapMoveCursorToSlot();
     UpdateMoveSlotPalette();
 
     move = sMonSummaryScreen->summary.moves[sMonSummaryScreen->firstMoveIndex];
@@ -5735,12 +5742,6 @@ static void ClearCancelText(void)
     FillSpriteRectColor(sp4, 0, 0, 24, 12, MOVE_SLOT_PP_FILL_COLOR);
 }
 
-static void SwapMovesNamesPP(u8 moveIndex1, u8 moveIndex2)
-{
-    PrintMoveNameAndPP(moveIndex1);
-    PrintMoveNameAndPP(moveIndex2);
-}
-
 static void PrintHMMovesCantBeForgotten(void)
 {
     u8 message[200];
@@ -6476,13 +6477,11 @@ static void LiftMoveSlot(u8 slot)
         InitComfyAnim_Easing(&config, &gComfyAnims[sMonSummaryScreen->heldMoveSlotAnimId]);
 }
 
-static void DropMoveSlot(void)
+static void DropMoveSlot(u8 targetSlot)
 {
     u8 slot = sMonSummaryScreen->heldMoveSlot;
     u8 *spriteIds = &sMonSummaryScreen->spriteIds[SPRITE_ARR_ID_MOVE_SLOT + (slot * MOVE_SLOT_SPRITES_COUNT)];
-    s16 homeY = 36 + slot * 18;
     u8 typeIconId = sMonSummaryScreen->spriteIds[slot + SPRITE_ARR_ID_TYPE];
-    u8 cursorId = sMonSummaryScreen->spriteIds[SPRITE_ARR_ID_MOVE_CURSOR];
     u8 i;
 
     for (i = 0; i < MOVE_SLOT_SPRITES_COUNT; i++)
@@ -6491,7 +6490,7 @@ static void DropMoveSlot(void)
         {
             struct Sprite *sprite = &gSprites[spriteIds[i]];
             sprite->x -= 4;
-            sprite->y = homeY;
+            sprite->y = 36 + targetSlot * 18;
             sprite->oam.priority = 1;
         }
     }
@@ -6500,14 +6499,57 @@ static void DropMoveSlot(void)
     {
         struct Sprite *typeSprite = &gSprites[typeIconId];
         typeSprite->x -= 4;
-        typeSprite->y = homeY;
+        typeSprite->y = 36 + slot * 18;
         typeSprite->oam.priority = 1;
     }
 
-    if (cursorId != SPRITE_NONE)
-        gSprites[cursorId].invisible = FALSE;
-
     sMonSummaryScreen->heldMoveSlot = MOVE_SLOT_COUNT;
+}
+
+static void SetMoveSlotSpritesRow(u8 slot, u8 row)
+{
+    u8 *spriteIds = &sMonSummaryScreen->spriteIds[SPRITE_ARR_ID_MOVE_SLOT + (slot * MOVE_SLOT_SPRITES_COUNT)];
+    u8 i;
+
+    for (i = 0; i < MOVE_SLOT_SPRITES_COUNT; i++)
+    {
+        if (spriteIds[i] != SPRITE_NONE)
+            gSprites[spriteIds[i]].y = 36 + row * 18;
+    }
+}
+
+static void SwapMoveSlotSpriteIds(u8 slotA, u8 slotB)
+{
+    u8 *spriteIdsA = &sMonSummaryScreen->spriteIds[SPRITE_ARR_ID_MOVE_SLOT + (slotA * MOVE_SLOT_SPRITES_COUNT)];
+    u8 *spriteIdsB = &sMonSummaryScreen->spriteIds[SPRITE_ARR_ID_MOVE_SLOT + (slotB * MOVE_SLOT_SPRITES_COUNT)];
+    u8 i;
+
+    for (i = 0; i < MOVE_SLOT_SPRITES_COUNT; i++)
+    {
+        u8 temp = spriteIdsA[i];
+        spriteIdsA[i] = spriteIdsB[i];
+        spriteIdsB[i] = temp;
+    }
+}
+
+static void SnapMoveCursorToSlot(void)
+{
+    u8 cursorId = sMonSummaryScreen->spriteIds[SPRITE_ARR_ID_MOVE_CURSOR];
+    s16 y2 = sMonSummaryScreen->firstMoveIndex * 18;
+
+    if (sMonSummaryScreen->moveCursorAnimId != INVALID_COMFY_ANIM)
+        InitComfyAnim_Easing(&(struct ComfyAnimEasingConfig){
+            .from = Q_24_8(y2),
+            .to = Q_24_8(y2),
+            .durationFrames = 1,
+            .easingFunc = ComfyAnimEasing_EaseOutCubic,
+        }, &gComfyAnims[sMonSummaryScreen->moveCursorAnimId]);
+
+    if (cursorId != SPRITE_NONE)
+    {
+        gSprites[cursorId].y2 = y2;
+        gSprites[cursorId].invisible = FALSE;
+    }
 }
 
 static void AnimateLiftedSlotToTarget(void)
