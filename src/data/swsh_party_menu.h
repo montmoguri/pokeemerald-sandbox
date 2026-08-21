@@ -11,17 +11,13 @@ static const u16 sPartyMenuBg_Pal[]             = INCGFX_U16("graphics/party_men
 static const u32 sPartyMenuBg_Main_Tilemap[]    = INCGFX_U32("graphics/party_menu/swsh/bg_main.bin", ".smolTM");
 static const u32 sPartyMenuBg_Scroll_Tilemap[]  = INCGFX_U32("graphics/party_menu/swsh/bg_scroll.bin", ".smolTM");
 
-static const u32 sCursor_Gfx[]                  = INCGFX_U32("graphics/party_menu/swsh/cursor.png", ".4bpp.smol");
 static const u32 sHeldItem_Gfx[]                = INCGFX_U32("graphics/party_menu/swsh/hold_icons.png", ".4bpp");
 static const u32 sMoveTypes_Gfx[]               = INCGFX_U32("graphics/party_menu/swsh/move_types.png", ".4bpp.smol");
 static const u32 sMessageWindow_Gfx[]           = INCGFX_U32("graphics/party_menu/swsh/message_window.png", ".4bpp.smol");
 static const u32 sQuantityWindow_Gfx[]          = INCGFX_U32("graphics/party_menu/swsh/quantity_window.png", ".4bpp.smol");
 static const u32 sSelectFrame_Gfx[]             = INCGFX_U32("graphics/party_menu/swsh/select_frame.png", ".4bpp.smol");
-static const u32 sStatusIcons_Gfx[]             = INCGFX_U32("graphics/party_menu/swsh/status_icons.png", ".4bpp.smol");
 
 static const u16 sHeldItem_Pal[]                = INCGFX_U16("graphics/party_menu/swsh/hold_icons.png", ".gbapal");
-static const u16 sStatusIcons_Pal[]             = INCGFX_U16("graphics/party_menu/swsh/status_icons.png", ".gbapal");
-static const u16 sMonShadow_Pal[]               = INCGFX_U16("graphics/party_menu/swsh/shadow.pal", ".gbapal");
 
 static const u8 sButtons_Gfx[][4 * TILE_SIZE_4BPP] = {
     [BUTTON_START]  = INCGFX_U8("graphics/party_menu/swsh/button_start.png", ".4bpp"),
@@ -111,12 +107,22 @@ static const struct
 #define PARTY_SLOT_STRIDE       24
 #define PARTY_ITEM_OFFSET_X      6
 #define PARTY_ITEM_OFFSET_Y     10
-#define PARTY_STATUS_OFFSET_X   74
+#define PARTY_STATUS_OFFSET_X   73
 #define PARTY_STATUS_OFFSET_Y    9
 #define PARTY_ICON_X            34
 #define PARTY_ICON_X_SHIFTED    26  // one tile left, to clear the enemy/partner mons
 
 #define PARTY_SLOT_Y(s)  (PARTY_SLOT_TOP + PARTY_SLOT_STRIDE * (s))
+
+// HBlank swaps PARTY_ITEM_PAL_COUNT palettes to cover all six item icons,
+// parking the rest in unused BG palettes
+// Credit: Greenphx9 and aarant/merrp icons-expansion branch
+#define PARTY_ITEM_ICON_TOP(s)          (PARTY_SLOT_Y(s) + PARTY_ITEM_OFFSET_Y - 16)
+#define PARTY_ITEM_PAL_SWAP_VCOUNT(s)   (PARTY_ITEM_ICON_TOP(s) - 8)
+
+STATIC_ASSERT(PARTY_ITEM_ICON_TOP(0) + 32 <= PARTY_ITEM_ICON_TOP(PARTY_ITEM_PAL_COUNT), PartyItemIconsShareScanlines);
+
+static const u8 sHeldItemIconParkPalNums[PARTY_ITEM_PARK_PAL_COUNT] = { 9, 10, 11 };
 
 // One slot: mon icon (x,y), held item (x,y), status (x,y) — all derived from the icon origin.
 #define PARTY_SLOT_COORDS(iconX, s)                                          \
@@ -1015,31 +1021,16 @@ static const struct OamData sOamData_Cursor =
 
 static const struct CompressedSpriteSheet sSpriteSheet_Cursor =
 {
-    .data = sCursor_Gfx,
-    .size = (16 * 16 * 3) / 2,
+    .data = gCursorSwSh_Gfx,
+    .size = (16 * 16) / 2,
     .tag = TAG_CURSOR
-};
-
-static const union AnimCmd sAnim_Cursor[] =
-{
-    ANIMCMD_FRAME(0, 8),
-    ANIMCMD_FRAME(4, 8),
-    ANIMCMD_FRAME(8, 8),
-    ANIMCMD_FRAME(4, 8),
-    ANIMCMD_JUMP(0)
-};
-
-static const union AnimCmd *const sAnims_Cursor[] =
-{
-    sAnim_Cursor,
 };
 
 static const struct SpriteTemplate sSpriteTemplate_Cursor =
 {
     .tileTag = TAG_CURSOR,
-    .paletteTag = TAG_HELD_ITEM,
+    .paletteTag = TAG_STATUS_ICONS,
     .oam = &sOamData_Cursor,
-    .anims = sAnims_Cursor,
 };
 
 static const struct OamData sOamData_SelectFrame =
@@ -1202,7 +1193,7 @@ static const struct SpriteTemplate sSpriteTemplate_QuantityWindow =
 
 static const struct SpritePalette sSpritePal_PartyMonShadow =
 {
-    .data = sMonShadow_Pal,
+    .data = gMonShadowSwSh_Pal,
     .tag = TAG_MON_SHADOW
 };
 
@@ -1271,6 +1262,12 @@ static const union AnimCmd sSpriteAnim_StatusFrostbite[] =
     ANIMCMD_END
 };
 
+static const union AnimCmd sSpriteAnim_StatusToxic[] =
+{
+    ANIMCMD_FRAME(32, 0),
+    ANIMCMD_END
+};
+
 static const union AnimCmd *const sSpriteTemplate_StatusCondition[] =
 {
     sSpriteAnim_StatusPoison,
@@ -1280,26 +1277,29 @@ static const union AnimCmd *const sSpriteTemplate_StatusCondition[] =
     sSpriteAnim_StatusBurn,
     sSpriteAnim_StatusPokerus,
     sSpriteAnim_StatusFaint,
-    sSpriteAnim_StatusFrostbite
+    sSpriteAnim_StatusFrostbite,
+    sSpriteAnim_StatusToxic,
 };
+
+STATIC_ASSERT(ARRAY_COUNT(sSpriteTemplate_StatusCondition) == STATUS_ICON_COUNT, StatusIconAnimCount);
 
 static const struct CompressedSpriteSheet sSpriteSheet_StatusIcons =
 {
-    .data = sStatusIcons_Gfx,
-    .size = 0x400,
+    .data = gStatusIconsSwSh_Gfx,
+    .size = STATUS_ICON_COUNT * 4 * TILE_SIZE_4BPP,
     .tag = TAG_STATUS_ICONS
 };
 
 static const struct SpritePalette sSpritePalette_StatusIcons =
 {
-    .data = sStatusIcons_Pal,
-    .tag = TAG_HELD_ITEM
+    .data = gStatusIconsSwSh_Pal,
+    .tag = TAG_STATUS_ICONS
 };
 
 const struct SpriteTemplate gSpriteTemplate_StatusIcons =
 {
     .tileTag = TAG_STATUS_ICONS,
-    .paletteTag = TAG_HELD_ITEM,
+    .paletteTag = TAG_STATUS_ICONS,
     .oam = &sOamData_StatusCondition,
     .anims = sSpriteTemplate_StatusCondition,
 };

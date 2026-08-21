@@ -146,6 +146,7 @@ enum {
 #define TAG_CURSOR                      55121
 #define TAG_HOVER_ITEM                  55122
 #define TAG_HELD_ITEM_ICON_BASE         55123
+#define TAG_HELD_ITEM_ICON_PAL_BASE     55131
 #define TAG_SELECT_FRAME                55130
 #define TAG_MON_SHADOW                  55140
 #define TAG_SWITCH_ITEM_1               55141
@@ -153,6 +154,10 @@ enum {
 #define TAG_MESSAGE_WINDOW              55150
 #define TAG_QUANTITY_WINDOW             55151
 #define TAG_MOVE_TYPES                  55160
+
+#define PARTY_ITEM_PAL_COUNT            3
+#define PARTY_ITEM_PARK_PAL_COUNT       (PARTY_SIZE - PARTY_ITEM_PAL_COUNT)
+#define PARTY_ITEM_PAL_NONE             0xFF
 
 #define MESSAGE_WINDOW_SPRITES_COUNT    8
 #define QUANTITY_WINDOW_SPRITES_COUNT   2
@@ -174,6 +179,21 @@ enum {
 enum {
     // Window ids 0-5 are implicitly assigned to each party Pokémon in InitPartyMenuBoxes
     WIN_MSG = PARTY_SIZE,
+};
+
+enum StatusIcon
+{
+    STATUS_ICON_PSN,
+    STATUS_ICON_PRZ,
+    STATUS_ICON_SLP,
+    STATUS_ICON_FRZ,
+    STATUS_ICON_BRN,
+    STATUS_ICON_PKRS,
+    STATUS_ICON_FNT,
+    STATUS_ICON_FRB,
+    STATUS_ICON_TOX,
+    STATUS_ICON_COUNT,
+    STATUS_ICON_NONE = STATUS_ICON_COUNT,
 };
 
 struct PartyBoxRect
@@ -199,9 +219,11 @@ struct PartyMenuInternal
     // Cursor movement state
     u8 comfyAnimX;
     u8 comfyAnimY;
+    u8 comfyAnimBob;
 
     // Item mode (activated by selecting Item in mon menu)
     bool8 inItemMode;
+    u8 heldItemIconPalNums[PARTY_ITEM_PAL_COUNT]; // PARTY_ITEM_PAL_NONE while the swap is off
 
     u8 windowId[3];
     u8 promptWindowId;
@@ -340,7 +362,7 @@ static void DisplayPartyPokemonHP(u16 hp, u16 maxHp, struct PartyMenuBox *menuBo
 static void DisplayPartyPokemonHPBar(u16, u16, struct PartyMenuBox *);
 static void CreatePartyMonIconSpriteParameterized(enum Species, u32, bool32, struct PartyMenuBox *, u8);
 static void CreatePartyMonHeldItemSpriteParameterized(enum Species, enum Item, struct PartyMenuBox *);
-static void CreatePartyMonStatusSpriteParameterized(enum Species, u8, struct PartyMenuBox *);
+static void CreatePartyMonStatusSpriteParameterized(enum Species, u32, struct PartyMenuBox *);
 // These next 4 functions are essentially redundant with the above 4
 // The only difference is that rather than receive the data directly they retrieve it from the mon struct
 static void CreatePartyMonHeldItemSprite(struct Pokemon *, struct PartyMenuBox *);
@@ -460,8 +482,10 @@ static void SpriteCB_BouncePartyMonIcon(struct Sprite *);
 static void ShowOrHideHeldItemSprite(enum Item, struct PartyMenuBox *);
 static void CreateHeldItemSpriteForTrade(u8, bool8);
 static void SpriteCB_HeldItem(struct Sprite *);
+static void SetHeldItemIconPalSwap(bool32);
+static u32 GetStatusIconFromStatus(u32);
 static void SetPartyMonAilmentGfx(struct Pokemon *, struct PartyMenuBox *);
-static void UpdatePartyMonAilmentGfx(u8, struct PartyMenuBox *);
+static void UpdatePartyMonAilmentGfx(u32, struct PartyMenuBox *);
 static u8 GetPartyLayoutFromBattleType(void);
 static void Task_SetSacredAshCB(u8);
 static void CB2_ReturnToBagMenu(void);
@@ -674,8 +698,11 @@ static void InitPartyMenu(u8 menuType, u8 layout, u8 partyAction, bool8 keepCurs
         sPartyMenuInternal->fusionFirstMonSpecies = SPECIES_NONE;
 
         sPartyMenuInternal->inItemMode = FALSE;
+        for (i = 0; i < PARTY_ITEM_PAL_COUNT; i++)
+            sPartyMenuInternal->heldItemIconPalNums[i] = PARTY_ITEM_PAL_NONE;
         sPartyMenuInternal->comfyAnimX = INVALID_COMFY_ANIM;
         sPartyMenuInternal->comfyAnimY = INVALID_COMFY_ANIM;
+        sPartyMenuInternal->comfyAnimBob = INVALID_COMFY_ANIM;
         if (!keepCursorPos)
             gPartyMenu.slotId = 0;
 
@@ -1314,8 +1341,10 @@ static void FreePartyPointers(void)
 
     if (sPartyMenuInternal)
     {
+        SetHeldItemIconPalSwap(FALSE);
         ReleaseComfyAnim(sPartyMenuInternal->comfyAnimX);
         ReleaseComfyAnim(sPartyMenuInternal->comfyAnimY);
+        ReleaseComfyAnim(sPartyMenuInternal->comfyAnimBob);
         Free(sPartyMenuInternal);
     }
     if (sPartyBgTilemapBuffer)
@@ -1716,7 +1745,7 @@ static void CreatePartyMonSprites(u8 slot)
 
     if (gPartyMenu.menuType == PARTY_MENU_TYPE_MULTI_SHOWCASE && slot >= MULTI_PARTY_SIZE)
     {
-        u8 status;
+        u32 statusIcon;
         actualSlot = slot - MULTI_PARTY_SIZE;
 
         if (gMultiPartnerParty[actualSlot].species != SPECIES_NONE)
@@ -1724,10 +1753,10 @@ static void CreatePartyMonSprites(u8 slot)
             CreatePartyMonIconSpriteParameterized(gMultiPartnerParty[actualSlot].species, gMultiPartnerParty[actualSlot].personality, FALSE, &sPartyMenuBoxes[slot], 0);
             CreatePartyMonHeldItemSpriteParameterized(gMultiPartnerParty[actualSlot].species, gMultiPartnerParty[actualSlot].heldItem, &sPartyMenuBoxes[slot]);
             if (gMultiPartnerParty[actualSlot].hp == 0)
-                status = AILMENT_FNT;
+                statusIcon = STATUS_ICON_FNT;
             else
-                status = GetAilmentFromStatus(gMultiPartnerParty[actualSlot].status);
-            CreatePartyMonStatusSpriteParameterized(gMultiPartnerParty[actualSlot].species, status, &sPartyMenuBoxes[slot]);
+                statusIcon = GetStatusIconFromStatus(gMultiPartnerParty[actualSlot].status);
+            CreatePartyMonStatusSpriteParameterized(gMultiPartnerParty[actualSlot].species, statusIcon, &sPartyMenuBoxes[slot]);
         }
     }
     else
@@ -5451,17 +5480,86 @@ static const union AffineAnimCmd *const sAffineAnims_ItemIcon[] =
     sAffineAnim_ItemIcon_Small,
 };
 
+static void HBlankCB_PartyMenu(void)
+{
+    u32 vCount = REG_VCOUNT;
+
+    if (sPartyMenuInternal == NULL)
+        return;
+
+    if (vCount < PARTY_ITEM_PAL_SWAP_VCOUNT(PARTY_ITEM_PAL_COUNT)
+        || vCount > PARTY_ITEM_PAL_SWAP_VCOUNT(PARTY_SIZE - 1))
+        return;
+
+    for (u32 slot = PARTY_ITEM_PAL_COUNT; slot < PARTY_SIZE; slot++)
+    {
+        if (vCount != PARTY_ITEM_PAL_SWAP_VCOUNT(slot))
+            continue;
+
+        CpuFastCopy((u32 *)(BG_PLTT + PLTT_OFFSET_4BPP(sHeldItemIconParkPalNums[slot - PARTY_ITEM_PAL_COUNT])),
+                    (u32 *)(OBJ_PLTT + PLTT_OFFSET_4BPP(sPartyMenuInternal->heldItemIconPalNums[slot % PARTY_ITEM_PAL_COUNT])),
+                    PLTT_SIZE_4BPP);
+        return;
+    }
+}
+
+static void SetHeldItemIconPalSwap(bool32 enable)
+{
+    u32 i;
+
+    if (enable == (sPartyMenuInternal->heldItemIconPalNums[0] != PARTY_ITEM_PAL_NONE))
+        return;
+
+    if (enable)
+    {
+        for (i = 0; i < PARTY_ITEM_PAL_COUNT; i++)
+            sPartyMenuInternal->heldItemIconPalNums[i] = AllocSpritePalette(TAG_HELD_ITEM_ICON_PAL_BASE + i);
+        SetHBlankCallback(HBlankCB_PartyMenu);
+        EnableInterrupts(INTR_FLAG_HBLANK);
+    }
+    else
+    {
+        SetHBlankCallback(NULL);
+        DisableInterrupts(INTR_FLAG_HBLANK);
+        for (i = 0; i < PARTY_ITEM_PAL_COUNT; i++)
+        {
+            FreeSpritePaletteByTag(TAG_HELD_ITEM_ICON_PAL_BASE + i);
+            sPartyMenuInternal->heldItemIconPalNums[i] = PARTY_ITEM_PAL_NONE;
+        }
+    }
+}
+
 static void CreatePartyMonCustomItemIcon(struct PartyMenuBox *menuBox, enum Item item)
 {
-    u8 slot = menuBox - sPartyMenuBoxes;
-    u16 tag = TAG_HELD_ITEM_ICON_BASE + slot;
-    u8 spriteId = AddItemIconSprite(tag, tag, item);
+    u32 slot = menuBox - sPartyMenuBoxes;
+    u32 palSlot = slot % PARTY_ITEM_PAL_COUNT;
+    struct SpriteTemplate template;
+    u8 spriteId;
+
+    SetHeldItemIconPalSwap(TRUE);
+
+    if (!AllocItemIconTemporaryBuffers())
+        return;
+
+    DecompressDataWithHeaderWram(GetItemIconPic(item), gItemIconDecompressionBuffer);
+    CopyItemIconPicTo4x4Buffer(gItemIconDecompressionBuffer, gItemIcon4x4Buffer);
+    LoadSpriteSheet(&(struct SpriteSheet){ .data = gItemIcon4x4Buffer, .size = 0x200, .tag = TAG_HELD_ITEM_ICON_BASE + slot });
+    FreeItemIconTemporaryBuffers();
+
+    LoadPalette(GetItemIconPalette(item),
+                slot < PARTY_ITEM_PAL_COUNT
+                    ? OBJ_PLTT_ID(sPartyMenuInternal->heldItemIconPalNums[palSlot])
+                    : BG_PLTT_ID(sHeldItemIconParkPalNums[slot - PARTY_ITEM_PAL_COUNT]),
+                PLTT_SIZE_4BPP);
+
+    template = gItemIconSpriteTemplate;
+    template.tileTag = TAG_HELD_ITEM_ICON_BASE + slot;
+    template.paletteTag = TAG_HELD_ITEM_ICON_PAL_BASE + palSlot;
+    spriteId = CreateSprite(&template, menuBox->spriteCoords[2], menuBox->spriteCoords[3], 2);
 
     if (spriteId != MAX_SPRITES)
     {
         menuBox->itemSpriteId = spriteId;
-        gSprites[spriteId].x = menuBox->spriteCoords[2];
-        gSprites[spriteId].y = menuBox->spriteCoords[3];
         gSprites[spriteId].oam.priority = 1;
         gSprites[spriteId].subpriority = 2;
 
@@ -5526,7 +5624,6 @@ static void UpdatePartyMonHeldItemSprite(struct Pokemon *mon, struct PartyMenuBo
             FreeSpriteOamMatrix(&gSprites[menuBox->itemSpriteId]);
             DestroySprite(&gSprites[menuBox->itemSpriteId]);
             FreeSpriteTilesByTag(tag);
-            FreeSpritePaletteByTag(tag);
             menuBox->itemSpriteId = MAX_SPRITES;
         }
 
@@ -5537,14 +5634,15 @@ static void UpdatePartyMonHeldItemSprite(struct Pokemon *mon, struct PartyMenuBo
     }
     else
     {
+        SetHeldItemIconPalSwap(FALSE);
+
         if (menuBox->itemSpriteId != MAX_SPRITES)
         {
-            if (gSprites[menuBox->itemSpriteId].template->tileTag != TAG_HELD_ITEM)
+            if (gSprites[menuBox->itemSpriteId].template != &sSpriteTemplate_HeldItem)
             {
                 FreeSpriteOamMatrix(&gSprites[menuBox->itemSpriteId]);
                 DestroySprite(&gSprites[menuBox->itemSpriteId]);
                 FreeSpriteTilesByTag(tag);
-                FreeSpritePaletteByTag(tag);
                 menuBox->itemSpriteId = MAX_SPRITES;
             }
         }
@@ -5632,6 +5730,57 @@ static void SnapPartyMenuCursor(s16 x, s16 y)
     RestartCursorAnim(&sPartyMenuInternal->comfyAnimY, y, y, 1);
 }
 
+#define CURSOR_BOB_RANGE 3
+#define CURSOR_BOB_FRAMES 20
+#define sBobTarget data[0]
+
+static void SpriteCB_PartyMenuCursor(struct Sprite *sprite)
+{
+    struct ComfyAnim *bob;
+
+    if (sPartyMenuInternal == NULL || sPartyMenuInternal->comfyAnimBob == INVALID_COMFY_ANIM)
+        return;
+
+    bob = &gComfyAnims[sPartyMenuInternal->comfyAnimBob];
+
+    if (bob->completed && sprite->x2 == sprite->sBobTarget)
+    {
+        sprite->sBobTarget = (sprite->sBobTarget == 0) ? CURSOR_BOB_RANGE : 0;
+        InitComfyAnim_Easing(&(struct ComfyAnimEasingConfig){
+            .from = Q_24_8(sprite->x2),
+            .to = Q_24_8(sprite->sBobTarget),
+            .durationFrames = CURSOR_BOB_FRAMES,
+            .easingFunc = ComfyAnimEasing_EaseInOutQuad,
+        }, bob);
+        TryAdvanceComfyAnim(bob);
+    }
+
+    sprite->x2 = ReadComfyAnimValueSmooth(bob);
+}
+
+static void StartPartyMenuCursorBob(u8 spriteId)
+{
+    struct ComfyAnimEasingConfig config = {
+        .from = Q_24_8(0),
+        .to = Q_24_8(CURSOR_BOB_RANGE),
+        .durationFrames = CURSOR_BOB_FRAMES,
+        .easingFunc = ComfyAnimEasing_EaseInOutQuad,
+    };
+
+    if (sPartyMenuInternal->comfyAnimBob == INVALID_COMFY_ANIM)
+        sPartyMenuInternal->comfyAnimBob = CreateComfyAnim_Easing(&config);
+    else
+        InitComfyAnim_Easing(&config, &gComfyAnims[sPartyMenuInternal->comfyAnimBob]);
+
+    gSprites[spriteId].x2 = 0;
+    gSprites[spriteId].sBobTarget = CURSOR_BOB_RANGE;
+    gSprites[spriteId].callback = SpriteCB_PartyMenuCursor;
+}
+
+#undef CURSOR_BOB_RANGE
+#undef CURSOR_BOB_FRAMES
+#undef sBobTarget
+
 static void CreateItemIconSprite(struct PartyMenuBox *menuBox, u8 slot, enum Item item)
 {
     u8 x = menuBox->spriteCoords[0] - 8;
@@ -5712,6 +5861,7 @@ static void CreateHoverSprite(struct PartyMenuBox *menuBox, u8 slot)
                 gSprites[sCursorSpriteId].oam.priority = 1;
                 gSprites[sCursorSpriteId].subpriority = 2;
                 SnapPartyMenuCursor(x, y);
+                StartPartyMenuCursorBob(sCursorSpriteId);
             }
         }
     }
@@ -5825,6 +5975,7 @@ static void CreateItemMoveSprite(u8 fromSlot, u8 toSlot, enum Item item)
         gSprites[sCursorSpriteId].oam.priority = 1;
         gSprites[sCursorSpriteId].subpriority = 2;
         SnapPartyMenuCursor(cursorX, cursorY);
+        StartPartyMenuCursorBob(sCursorSpriteId);
     }
 
     // 2. Clear existing icons so UpdatePartyMonHeldItemSprite loads new graphics
@@ -5833,7 +5984,6 @@ static void CreateItemMoveSprite(u8 fromSlot, u8 toSlot, enum Item item)
         u16 tag = TAG_HELD_ITEM_ICON_BASE + fromSlot;
         DestroySprite(&gSprites[sPartyMenuBoxes[fromSlot].itemSpriteId]);
         FreeSpriteTilesByTag(tag);
-        FreeSpritePaletteByTag(tag);
         sPartyMenuBoxes[fromSlot].itemSpriteId = MAX_SPRITES;
     }
     if (sPartyMenuBoxes[toSlot].itemSpriteId != MAX_SPRITES)
@@ -5841,7 +5991,6 @@ static void CreateItemMoveSprite(u8 fromSlot, u8 toSlot, enum Item item)
         u16 tag = TAG_HELD_ITEM_ICON_BASE + toSlot;
         DestroySprite(&gSprites[sPartyMenuBoxes[toSlot].itemSpriteId]);
         FreeSpriteTilesByTag(tag);
-        FreeSpritePaletteByTag(tag);
         sPartyMenuBoxes[toSlot].itemSpriteId = MAX_SPRITES;
     }
 
@@ -6059,20 +6208,52 @@ static void CreatePartyMonStatusSprite(struct Pokemon *mon, struct PartyMenuBox 
     }
 }
 
-static void CreatePartyMonStatusSpriteParameterized(enum Species species, u8 status, struct PartyMenuBox *menuBox)
+static void CreatePartyMonStatusSpriteParameterized(enum Species species, u32 statusIcon, struct PartyMenuBox *menuBox)
 {
     if (species != SPECIES_NONE)
     {
         menuBox->statusSpriteId = CreateSprite(&gSpriteTemplate_StatusIcons, menuBox->spriteCoords[4], menuBox->spriteCoords[5], 1);
-        UpdatePartyMonAilmentGfx(status, menuBox);
+        UpdatePartyMonAilmentGfx(statusIcon, menuBox);
         gSprites[menuBox->statusSpriteId].oam.priority = 1;
         gSprites[menuBox->statusSpriteId].subpriority = 3;
     }
 }
 
+static u32 GetStatusIconFromStatus(u32 status)
+{
+    if (status & STATUS1_TOXIC_POISON)
+        return STATUS_ICON_TOX;
+    if (status & STATUS1_PSN_ANY)
+        return STATUS_ICON_PSN;
+    if (status & STATUS1_SLEEP)
+        return STATUS_ICON_SLP;
+    if (status & STATUS1_PARALYSIS)
+        return STATUS_ICON_PRZ;
+    if (status & STATUS1_FREEZE)
+        return STATUS_ICON_FRZ;
+    if (status & STATUS1_BURN)
+        return STATUS_ICON_BRN;
+    if (status & STATUS1_FROSTBITE)
+        return STATUS_ICON_FRB;
+    return STATUS_ICON_NONE;
+}
+
+static u32 GetStatusIcon(struct Pokemon *mon)
+{
+    if (GetMonData(mon, MON_DATA_HP) == 0)
+        return STATUS_ICON_FNT;
+
+    u32 statusIcon = GetStatusIconFromStatus(GetMonData(mon, MON_DATA_STATUS));
+    if (statusIcon != STATUS_ICON_NONE)
+        return statusIcon;
+    if (ShouldPokemonShowActivePokerus(mon))
+        return STATUS_ICON_PKRS;
+    return STATUS_ICON_NONE;
+}
+
 static void SetPartyMonAilmentGfx(struct Pokemon *mon, struct PartyMenuBox *menuBox)
 {
-    UpdatePartyMonAilmentGfx(GetMonAilment(mon), menuBox);
+    UpdatePartyMonAilmentGfx(GetStatusIcon(mon), menuBox);
 }
 
 static u8 LoadMonGfxAndSprite(struct Pokemon *mon, s16 *state, bool32 isShadow)
@@ -6231,16 +6412,16 @@ static void RunMonAnimTimer(void)
 #undef sIsShadow
 #undef sIsEgg
 
-static void UpdatePartyMonAilmentGfx(u8 status, struct PartyMenuBox *menuBox)
+static void UpdatePartyMonAilmentGfx(u32 statusIcon, struct PartyMenuBox *menuBox)
 {
-    switch (status)
+    switch (statusIcon)
     {
-    case AILMENT_NONE:
-    case AILMENT_PKRS:
+    case STATUS_ICON_NONE:
+    case STATUS_ICON_PKRS:
         gSprites[menuBox->statusSpriteId].invisible = TRUE;
         break;
     default:
-        StartSpriteAnim(&gSprites[menuBox->statusSpriteId], status - 1);
+        StartSpriteAnim(&gSprites[menuBox->statusSpriteId], statusIcon);
         gSprites[menuBox->statusSpriteId].invisible = FALSE;
         break;
     }
