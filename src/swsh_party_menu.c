@@ -152,7 +152,7 @@ enum {
 #define TAG_SWITCH_ITEM_1               55141
 #define TAG_SWITCH_ITEM_2               55142
 #define TAG_MESSAGE_WINDOW              55150
-#define TAG_QUANTITY_WINDOW             55151
+#define TAG_QUANTITY_FRAME              55151
 #define TAG_MOVE_TYPES                  55160
 
 #define PARTY_ITEM_PAL_COUNT            3
@@ -160,7 +160,7 @@ enum {
 #define PARTY_ITEM_PAL_NONE             0xFF
 
 #define MESSAGE_WINDOW_SPRITES_COUNT    8
-#define QUANTITY_WINDOW_SPRITES_COUNT   2
+#define QUANTITY_FRAME_SPRITES_COUNT    2
 
 #define PARTY_PAL_SELECTED     (1 << 0)
 #define PARTY_PAL_FAINTED      (1 << 1) // unused in swsh party menu
@@ -243,7 +243,7 @@ struct PartyMenuInternal
     struct MoveSlot moveSlots[MAX_MON_MOVES];
     u8 selectFrameSpriteIds[7];                                 // Left + 5 middle + Right
     u8 messageWindowSpriteIds[MESSAGE_WINDOW_SPRITES_COUNT];
-    u8 quantityWindowSpriteIds[QUANTITY_WINDOW_SPRITES_COUNT];
+    u8 quantityFrameSpriteIds[QUANTITY_FRAME_SPRITES_COUNT];
     u8 fusionFirstMonSlot;                                      // Fusion item: selected first mon slot (PARTY_SIZE = none)
     enum Species fusionFirstMonSpecies;                         // Fusion item: selected first mon species
 };
@@ -371,8 +371,8 @@ static void CreatePartyMonStatusSprite(struct Pokemon *, struct PartyMenuBox *);
 static void CreateHoverSprite(struct PartyMenuBox *, u8);
 static void CreateMessageWindowSprite(void);
 static void DestroyMessageWindowSprite(void);
-static void CreateQuantityWindowSprite(void);
-static void DestroyQuantityWindowSprite(void);
+static void CreateQuantityFrameSprites(void);
+static void DestroyQuantityFrameSprites(void);
 static void DestroyHoverSprite(void);
 static void CreateItemIconSprite(struct PartyMenuBox *, u8, enum Item);
 static void CreateItemMoveSprite(u8, u8, enum Item);
@@ -638,7 +638,6 @@ static const u8 sText_CannotSendMonToBoxPartner[] = _("Cannot send a mon that do
 #define tItemCount          data[5]
 #define tMaxItemQuantity    data[6]
 #define tQuantityInBag      data[7]
-#define tWindowId           data[8]
 #define tItemEffect         data[9]
 #define tHoldEffectParam    data[10]
 
@@ -692,8 +691,8 @@ static void InitPartyMenu(u8 menuType, u8 layout, u8 partyAction, bool8 keepCurs
             sPartyMenuInternal->selectFrameSpriteIds[i] = MAX_SPRITES;
         for (i = 0; i < ARRAY_COUNT(sPartyMenuInternal->messageWindowSpriteIds); i++)
             sPartyMenuInternal->messageWindowSpriteIds[i] = MAX_SPRITES;
-        for (i = 0; i < ARRAY_COUNT(sPartyMenuInternal->quantityWindowSpriteIds); i++)
-            sPartyMenuInternal->quantityWindowSpriteIds[i] = MAX_SPRITES;
+        for (i = 0; i < ARRAY_COUNT(sPartyMenuInternal->quantityFrameSpriteIds); i++)
+            sPartyMenuInternal->quantityFrameSpriteIds[i] = MAX_SPRITES;
         sPartyMenuInternal->fusionFirstMonSlot = PARTY_SIZE;
         sPartyMenuInternal->fusionFirstMonSpecies = SPECIES_NONE;
 
@@ -1311,7 +1310,7 @@ static bool8 DecompressGraphics(void)
         sPartyMenuInternal->switchCounter++;
         break;
     case 18:
-        LoadCompressedSpriteSheet(&sSpriteSheet_QuantityWindow);
+        LoadCompressedSpriteSheet(&sSpriteSheet_QuantityFrame);
         sPartyMenuInternal->switchCounter++;
         break;
     case 19:
@@ -1533,7 +1532,7 @@ static void DisplayPartyPokemonAbility(u8 windowId, u8 slot)
             ability = GetAbilityBySpecies(species, abilityNum);
             name = gAbilitiesInfo[ability].name;
             x = GetStringCenterAlignXOffset(FONT_SMALL, name, 104);
-            AddTextPrinterParameterized3(windowId, FONT_SMALL, x, y, sFontColorTable[11], 0, name);
+            AddTextPrinterParameterized3(windowId, FONT_SMALL, x, y, sFontColorTable[9], 0, name);
         }
     }
     CopyWindowToVram(windowId, COPYWIN_GFX);
@@ -3033,7 +3032,7 @@ static void ShowButtonPrompt(u8 type)
             if (iconXPos < 0)
                 iconXPos = 0;
             PrintButtonIcon(promptWindowId, BUTTON_R, iconXPos, 4);
-            PrintTextOnWindowWithFont(promptWindowId, text, stringXPos, 0, 0, 5, FONT_SMALL);
+            PrintTextOnWindowWithFont(promptWindowId, text, stringXPos, 0, 0, 4, FONT_SMALL);
             CopyWindowToVram(promptWindowId, COPYWIN_GFX);
         }
         break;
@@ -3046,7 +3045,7 @@ static void ShowButtonPrompt(u8 type)
             if (iconXPos < 0)
                 iconXPos = 0;
             PrintButtonIcon(promptWindowId, sPromptButtonInfo[BUTTON_PROMPT_CONFIRM].iconType, iconXPos, 4);
-            PrintTextOnWindowWithFont(promptWindowId, text, stringXPos, 0, 0, 5, FONT_SMALL);
+            PrintTextOnWindowWithFont(promptWindowId, text, stringXPos, 0, 0, 4, FONT_SMALL);
             CopyWindowToVram(promptWindowId, COPYWIN_GFX);
         }
         break;
@@ -3105,7 +3104,7 @@ static void ShowButtonPrompt(u8 type)
                 if (iconXPos < 0)
                     iconXPos = 0;
                 PrintButtonIcon(promptWindowId, sPromptButtonInfo[idx].iconType, iconXPos, 4);
-                PrintTextOnWindowWithFont(promptWindowId, text, stringXPos, 0, 0, 5, FONT_SMALL);
+                PrintTextOnWindowWithFont(promptWindowId, text, stringXPos, 0, 0, 4, FONT_SMALL);
                 curLeft += sPromptButtonInfo[idx].totalWidth + gap;
             }
             CopyWindowToVram(promptWindowId, COPYWIN_GFX);
@@ -3192,7 +3191,7 @@ static u8 GetPPFontColorIndexForMove(enum Move move, u8 currentPP, u8 ppBonuses,
     u8 maxPP = CalculatePPWithBonus(move, ppBonuses, m);
     u8 ppState = GetCurrentPpToMaxPpState(currentPP, maxPP);
 
-    return 7 + ppState;
+    return 5 + ppState;
 }
 
 static void PrintMovePPToWindow(u8 windowId, u8 fontId, enum Move move, u8 pp, u8 ppBonuses, int m, int xBase, int y, int areaWidth)
@@ -3213,7 +3212,7 @@ static void DisplayPartyPokemonMoves(u8 windowId, int m, enum Move move, u8 pp, 
     if (sPartyMenuInternal->moveSlots[m].typeSpriteId != MAX_SPRITES)
         StartSpriteAnim(&gSprites[sPartyMenuInternal->moveSlots[m].typeSpriteId], type);
     AddTextPrinterParameterized3(windowId, GetFontIdToFit(name, FONT_SMALL, 0, sPartyMoveBoxLayout.moveName.width),
-                                 sPartyMoveBoxLayout.moveName.x, sPartyMoveBoxLayout.moveName.y, sFontColorTable[11], 0, name);
+                                 sPartyMoveBoxLayout.moveName.x, sPartyMoveBoxLayout.moveName.y, sFontColorTable[9], 0, name);
     PrintMovePPToWindow(windowId, FONT_SMALL, move, pp, ppBonuses, m, sPartyMoveBoxLayout.pp.x, sPartyMoveBoxLayout.pp.y, sPartyMoveBoxLayout.pp.width);
 }
 
@@ -3284,11 +3283,11 @@ static void DisplayPartyPokemonGender(u8 gender, enum Species species, u8 *nickn
     {
     case MON_MALE:
         LoadGenderTextPalette(MON_MALE, menuBox, focused);
-        DisplayPartyPokemonBarDetail(menuBox->windowId, gText_MaleSymbol, 2, &sPartySlotLayout.gender);
+        DisplayPartyPokemonBarDetail(menuBox->windowId, gText_MaleSymbol, 1, &sPartySlotLayout.gender);
         break;
     case MON_FEMALE:
         LoadGenderTextPalette(MON_FEMALE, menuBox, focused);
-        DisplayPartyPokemonBarDetail(menuBox->windowId, gText_FemaleSymbol, 2, &sPartySlotLayout.gender);
+        DisplayPartyPokemonBarDetail(menuBox->windowId, gText_FemaleSymbol, 1, &sPartySlotLayout.gender);
         break;
     }
 }
@@ -3579,11 +3578,11 @@ static u8 DisplaySelectionWindow(u8 windowType)
     for (i = 0; i < sPartyMenuInternal->numActions; i++)
     {
         const u8 *text;
-        u8 fontColorsId = 3;
+        u8 fontColorsId = 2;
 
         if (sPartyMenuInternal->actions[i] >= MENU_FIELD_MOVES)
         {
-            fontColorsId = 4;
+            fontColorsId = 3;
             text = GetMoveName(FieldMove_GetMoveId(sPartyMenuInternal->actions[i] - MENU_FIELD_MOVES));
         }
         else
@@ -6118,38 +6117,39 @@ static void DestroyMessageWindowSprite(void)
     }
 }
 
-static void CreateQuantityWindowSprite(void)
+static void CreateQuantityFrameSprites(void)
 {
-    s16 x = 192;
+    s16 x = 144;
     s16 y = 96;
     int i;
     u8 spriteId;
 
-    if (sPartyMenuInternal->quantityWindowSpriteIds[0] != MAX_SPRITES)
+    if (sPartyMenuInternal->quantityFrameSpriteIds[0] != MAX_SPRITES)
         return;
 
-    for (i = 0; i < QUANTITY_WINDOW_SPRITES_COUNT; i++)
+    for (i = 0; i < QUANTITY_FRAME_SPRITES_COUNT; i++)
     {
-        spriteId = CreateSprite(&sSpriteTemplate_QuantityWindow, x + (i * 32), y, 0);
+        spriteId = CreateSprite(&sSpriteTemplate_QuantityFrame, x + (i * 64), y, 0);
         if (spriteId != MAX_SPRITES)
         {
-            StartSpriteAnim(&gSprites[spriteId], sQuantityWindowAnims[i]);
+            StartSpriteAnim(&gSprites[spriteId], sQuantityFrameAnims[i]);
+            SetSpriteSheetFrameTileNum(&gSprites[spriteId]);
             gSprites[spriteId].oam.priority = 1;
             gSprites[spriteId].subpriority = 0;
-            sPartyMenuInternal->quantityWindowSpriteIds[i] = spriteId;
+            sPartyMenuInternal->quantityFrameSpriteIds[i] = spriteId;
         }
     }
 }
 
-static void DestroyQuantityWindowSprite(void)
+static void DestroyQuantityFrameSprites(void)
 {
     int i;
-    for (i = 0; i < ARRAY_COUNT(sPartyMenuInternal->quantityWindowSpriteIds); i++)
+    for (i = 0; i < ARRAY_COUNT(sPartyMenuInternal->quantityFrameSpriteIds); i++)
     {
-        if (sPartyMenuInternal->quantityWindowSpriteIds[i] != MAX_SPRITES)
+        if (sPartyMenuInternal->quantityFrameSpriteIds[i] != MAX_SPRITES)
         {
-            DestroySprite(&gSprites[sPartyMenuInternal->quantityWindowSpriteIds[i]]);
-            sPartyMenuInternal->quantityWindowSpriteIds[i] = MAX_SPRITES;
+            DestroySprite(&gSprites[sPartyMenuInternal->quantityFrameSpriteIds[i]]);
+            sPartyMenuInternal->quantityFrameSpriteIds[i] = MAX_SPRITES;
         }
     }
 }
@@ -10500,42 +10500,50 @@ static bool8 DoesItemIncreaseEV(u8 itemType)
 
 static void ClearHowManyItemsWindow(u8 taskId)
 {
-    s16 *data = gTasks[taskId].data;
-
     PlaySE(SE_SELECT);
-    ClearStdWindowAndFrameToTransparent(tWindowId, FALSE);
     ClearStdWindowAndFrameToTransparent(WIN_MSG, FALSE);
-    ClearWindowTilemap(tWindowId);
     ClearWindowTilemap(WIN_MSG);
     DestroyMessageWindowSprite();
-    DestroyQuantityWindowSprite();
-    FillBgTilemapBufferRect(0, 0, 23, 10, 6, 4, 13);
+    DestroyQuantityFrameSprites();
     ScheduleBgCopyTilemapToVram(0);
 }
+
+#define QUANTITY_FILL_INDEX     13
+#define QUANTITY_COUNT_LEFT     16
+#define QUANTITY_COUNT_RIGHT    48
+#define QUANTITY_COUNT_TOP      8
+
+static const union TextColor sQuantityTextColor =
+{
+    .background = 0,
+    .foreground = 12,
+    .shadow = 14,
+};
 
 static void PrintHowManyItemsWindow(u8 taskId)
 {
     s16 *data = gTasks[taskId].data;
+    u8 spriteId;
 
-    CreateQuantityWindowSprite();
-    FillWindowPixelBuffer(tWindowId, PIXEL_FILL(0));
+    CreateQuantityFrameSprites();
+    spriteId = sPartyMenuInternal->quantityFrameSpriteIds[0];
+    if (spriteId == MAX_SPRITES)
+        return;
+
     ConvertIntToDecimalStringN(gStringVar1, tItemCount, STR_CONV_MODE_LEADING_ZEROS, MAX_ITEM_DIGITS);
     StringExpandPlaceholders(gStringVar3, gText_xVar1);
-    AddTextPrinterParameterized4(tWindowId, FONT_NORMAL, 4, 0, 0, -2, sFontColorTable[12], TEXT_SPEED_INSTANT, gStringVar3);
+    FillSpriteRectColor(spriteId, QUANTITY_COUNT_LEFT, QUANTITY_COUNT_TOP,
+        QUANTITY_COUNT_RIGHT - QUANTITY_COUNT_LEFT, GetFontAttribute(FONT_NARROW, FONTATTR_MAX_LETTER_HEIGHT), QUANTITY_FILL_INDEX);
+    AddSpriteTextPrinterParameterized6(spriteId, FONT_NARROW,
+        GetStringRightAlignXOffset(FONT_NARROW, gStringVar3, QUANTITY_COUNT_RIGHT), QUANTITY_COUNT_TOP,
+        0, 0, sQuantityTextColor, 0, gStringVar3);
 }
 
 static void Task_GiveHowManyItems(u8 taskId)
 {
-    s16 *data = gTasks[taskId].data;
-
     if (IsPartyMenuTextPrinterActive() != TRUE)
     {
-        tWindowId = AddWindow(&sGiveHowManyItemsWindowTemplate);
-        FillBgTilemapBufferRect(0, 0, 23, 10, 6, 4, 13);
-        PutWindowTilemap(tWindowId);
         PrintHowManyItemsWindow(taskId);
-        CopyWindowToVram(tWindowId, COPYWIN_GFX);
-        ScheduleBgCopyTilemapToVram(0);
 
         gTasks[taskId].func = Task_GiveHowManyItemsHandleInput;
     }
@@ -10710,7 +10718,6 @@ static void ItemUse_ApplyExpCandy(u8 taskId)
 #undef tItemCount
 #undef tMaxItemQuantity
 #undef tQuantityInBag
-#undef tWindowId
 #undef tItemEffect
 #undef tHoldEffectParam
 

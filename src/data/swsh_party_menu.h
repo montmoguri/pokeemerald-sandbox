@@ -14,7 +14,6 @@ static const u32 sPartyMenuBg_Scroll_Tilemap[]  = INCGFX_U32("graphics/party_men
 static const u32 sHeldItem_Gfx[]                = INCGFX_U32("graphics/party_menu/swsh/hold_icons.png", ".4bpp");
 static const u32 sMoveTypes_Gfx[]               = INCGFX_U32("graphics/party_menu/swsh/move_types.png", ".4bpp.smol");
 static const u32 sMessageWindow_Gfx[]           = INCGFX_U32("graphics/party_menu/swsh/message_window.png", ".4bpp.smol");
-static const u32 sQuantityWindow_Gfx[]          = INCGFX_U32("graphics/party_menu/swsh/quantity_window.png", ".4bpp.smol");
 static const u32 sSelectFrame_Gfx[]             = INCGFX_U32("graphics/party_menu/swsh/select_frame.png", ".4bpp.smol");
 
 static const u16 sHeldItem_Pal[]                = INCGFX_U16("graphics/party_menu/swsh/hold_icons.png", ".gbapal");
@@ -188,18 +187,15 @@ static const struct
 static const u8 sFontColorTable[][3] =
 {
     {0,  3,  2},  // Default
-    {0,  1,  6},  // Unused
     {0, 11, 12},  // Gender symbol
     {1,  2,  3},  // Selection actions
     {1,  8,  9},  // Field moves
     {0,  1,  2},  // Button prompt text
-    {1,  4,  5},  // Unused
     {0,  5,  6},  // PP state 0 (yellow)
     {0,  7,  8},  // PP state 1 (orange)
     {0,  9, 10},  // PP state 2 (red)
     {0,  3,  4},  // PP state 3 (white)
     {0,  1,  2},  // Ability name, move names
-    {0,  3,  6},  // Item multiuse
 };
 
 #define PARTY_LABEL_WINDOW_PROMPT 7
@@ -638,17 +634,6 @@ static const struct WindowTemplate sLevelUpStatsWindowTemplate =
     .width = 10,
     .height = 11,
     .paletteNum = 14,
-    .baseBlock = 0x283,
-};
-
-static const struct WindowTemplate sGiveHowManyItemsWindowTemplate =
-{
-    .bg = 0,
-    .tilemapLeft = 24,
-    .tilemapTop = 11,
-    .width = 4,
-    .height = 2,
-    .paletteNum = 1,
     .baseBlock = 0x283,
 };
 
@@ -1143,52 +1128,52 @@ static const struct SpriteTemplate sSpriteTemplate_MessageWindow =
     .anims = sSpriteAnimTable_MessageWindow,
 };
 
-static const struct OamData sOamData_QuantityWindow =
+static const struct OamData sOamData_QuantityFrame =
 {
     .y = 0,
     .affineMode = ST_OAM_AFFINE_OFF,
     .objMode = ST_OAM_OBJ_NORMAL,
     .mosaic = FALSE,
     .bpp = ST_OAM_4BPP,
-    .size = SPRITE_SIZE(32x32),
+    .size = SPRITE_SIZE(64x32),
     .x = 0,
     .matrixNum = 0,
-    .shape = SPRITE_SHAPE(32x32),
+    .shape = SPRITE_SHAPE(64x32),
     .tileNum = 0,
-    .priority = 0,
+    .priority = 1,
     .paletteNum = 0,
     .affineParam = 0,
 };
 
-static const union AnimCmd sSpriteAnim_QuantityWindow_0[] = {
+static const union AnimCmd sSpriteAnim_QuantityFrame_0[] = {
     ANIMCMD_FRAME(0, 0, FALSE, FALSE),
     ANIMCMD_END
 };
-static const union AnimCmd sSpriteAnim_QuantityWindow_1[] = {
-    ANIMCMD_FRAME(16, 0, FALSE, FALSE),
+static const union AnimCmd sSpriteAnim_QuantityFrame_1[] = {
+    ANIMCMD_FRAME(32, 0, FALSE, FALSE),
     ANIMCMD_END
 };
 
-static const union AnimCmd *const sSpriteAnimTable_QuantityWindow[] = {
-    sSpriteAnim_QuantityWindow_0,
-    sSpriteAnim_QuantityWindow_1,
+static const union AnimCmd *const sSpriteAnimTable_QuantityFrame[] = {
+    sSpriteAnim_QuantityFrame_0,
+    sSpriteAnim_QuantityFrame_1,
 };
 
-static const u8 sQuantityWindowAnims[QUANTITY_WINDOW_SPRITES_COUNT] = {0, 1};
+static const u8 sQuantityFrameAnims[QUANTITY_FRAME_SPRITES_COUNT] = {0, 1};
 
-static const struct CompressedSpriteSheet sSpriteSheet_QuantityWindow =
+static const struct CompressedSpriteSheet sSpriteSheet_QuantityFrame =
 {
-    .data = sQuantityWindow_Gfx,
-    .size = (32 * 32 * 2) / 2,
-    .tag = TAG_QUANTITY_WINDOW,
+    .data = gQuantityFrameSwSh_Gfx,
+    .size = (64 * 64) / 2,
+    .tag = TAG_QUANTITY_FRAME,
 };
 
-static const struct SpriteTemplate sSpriteTemplate_QuantityWindow =
+static const struct SpriteTemplate sSpriteTemplate_QuantityFrame =
 {
-    .tileTag = TAG_QUANTITY_WINDOW,
-    .paletteTag = TAG_HELD_ITEM,
-    .oam = &sOamData_QuantityWindow,
-    .anims = sSpriteAnimTable_QuantityWindow,
+    .tileTag = TAG_QUANTITY_FRAME,
+    .paletteTag = TAG_STATUS_ICONS,
+    .oam = &sOamData_QuantityFrame,
+    .anims = sSpriteAnimTable_QuantityFrame,
 };
 
 static const struct SpritePalette sSpritePal_PartyMonShadow =
