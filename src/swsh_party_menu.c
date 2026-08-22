@@ -2184,8 +2184,14 @@ static void HandleChooseMonCancel(u8 taskId, s8 *slotPtr)
     case PARTY_ACTION_CHOOSE_FAINTED_MON:
         PlaySE(SE_FAILURE);
         break;
-    case PARTY_ACTION_SOFTBOILED:
     case PARTY_ACTION_MOVE_ITEM:
+        PlaySE(SE_SELECT);
+        DestroySelectFrame();
+        AnimatePartySlot(gPartyMenu.slotId2, 0);
+        gPartyMenu.slotId2 = gPartyMenu.slotId;
+        FinishTwoMonAction(taskId);
+        break;
+    case PARTY_ACTION_SOFTBOILED:
     case PARTY_ACTION_FUSION:
         PlaySE(SE_SELECT);
         DestroySelectFrame();
@@ -4315,20 +4321,23 @@ static void Task_SlideMultiBattlePartyView(u8 taskId)
 static void FinishTwoMonAction(u8 taskId)
 {
     u8 i;
+    u8 action = gPartyMenu.action;
+
     PartyMenuRemoveWindow(&sPartyMenuInternal->windowId[1]);
 
-    if (gPartyMenu.action == PARTY_ACTION_FUSION)
+    if (action == PARTY_ACTION_FUSION)
     {
         sPartyMenuInternal->fusionFirstMonSlot = 0;
         sPartyMenuInternal->fusionFirstMonSpecies = SPECIES_NONE;
     }
 
+    gPartyMenu.action = PARTY_ACTION_CHOOSE_MON;
+
     AnimatePartySlot(gPartyMenu.slotId, 0);
     gPartyMenu.slotId = gPartyMenu.slotId2;
     AnimatePartySlot(gPartyMenu.slotId2, 1);
-    if (gPartyMenu.action != PARTY_ACTION_SWITCH)
+    if (action != PARTY_ACTION_SWITCH)
         UpdatePartyMonSprite(gPartyMenu.slotId);
-    gPartyMenu.action = PARTY_ACTION_CHOOSE_MON;
     CreateHoverSprite(&sPartyMenuBoxes[gPartyMenu.slotId], gPartyMenu.slotId);
 
     // Reset item icons to generic if we were in item mode
