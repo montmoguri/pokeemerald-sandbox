@@ -153,6 +153,7 @@ enum {
 #define TAG_SWITCH_ITEM_2               55142
 #define TAG_MESSAGE_WINDOW              55150
 #define TAG_QUANTITY_FRAME              55151
+#define TAG_SPINNER_ARROW               55152
 #define TAG_MOVE_TYPES                  55160
 
 #define PARTY_ITEM_PAL_COUNT            3
@@ -161,6 +162,22 @@ enum {
 
 #define MESSAGE_WINDOW_SPRITES_COUNT    8
 #define QUANTITY_FRAME_SPRITES_COUNT    2
+#define SPINNER_ARROW_SPRITES_COUNT     2
+
+enum {
+    SPINNER_ARROW_UP,
+    SPINNER_ARROW_DOWN,
+};
+
+enum {
+    SPINNER_ARROW_STATIC,
+    SPINNER_ARROW_ANIM,
+    SPINNER_ARROW_LOOP,
+};
+
+#define SPINNER_ARROW_Y_OFFSET          10
+#define SPINNER_ARROW_LOOP_FRAMES       8
+#define SPINNER_ARROW_ANIM_FRAMES       3
 
 #define PARTY_PAL_SELECTED     (1 << 0)
 #define PARTY_PAL_FAINTED      (1 << 1) // unused in swsh party menu
@@ -244,6 +261,7 @@ struct PartyMenuInternal
     u8 selectFrameSpriteIds[7];                                 // Left + 5 middle + Right
     u8 messageWindowSpriteIds[MESSAGE_WINDOW_SPRITES_COUNT];
     u8 quantityFrameSpriteIds[QUANTITY_FRAME_SPRITES_COUNT];
+    u8 spinnerArrowSpriteIds[SPINNER_ARROW_SPRITES_COUNT];
     u8 fusionFirstMonSlot;                                      // Fusion item: selected first mon slot (PARTY_SIZE = none)
     enum Species fusionFirstMonSpecies;                         // Fusion item: selected first mon species
 };
@@ -373,6 +391,10 @@ static void CreateMessageWindowSprite(void);
 static void DestroyMessageWindowSprite(void);
 static void CreateQuantityFrameSprites(void);
 static void DestroyQuantityFrameSprites(void);
+static void SpriteCB_SpinnerArrow(struct Sprite *);
+static void CreateSpinnerArrowSprites(s16, s16, u8);
+static void DestroySpinnerArrowSprites(void);
+static void AnimateQuantitySpinner(void);
 static void DestroyHoverSprite(void);
 static void CreateItemIconSprite(struct PartyMenuBox *, u8, enum Item);
 static void CreateItemMoveSprite(u8, u8, enum Item);
@@ -693,6 +715,8 @@ static void InitPartyMenu(u8 menuType, u8 layout, u8 partyAction, bool8 keepCurs
             sPartyMenuInternal->messageWindowSpriteIds[i] = MAX_SPRITES;
         for (i = 0; i < ARRAY_COUNT(sPartyMenuInternal->quantityFrameSpriteIds); i++)
             sPartyMenuInternal->quantityFrameSpriteIds[i] = MAX_SPRITES;
+        for (i = 0; i < ARRAY_COUNT(sPartyMenuInternal->spinnerArrowSpriteIds); i++)
+            sPartyMenuInternal->spinnerArrowSpriteIds[i] = MAX_SPRITES;
         sPartyMenuInternal->fusionFirstMonSlot = PARTY_SIZE;
         sPartyMenuInternal->fusionFirstMonSpecies = SPECIES_NONE;
 
@@ -1314,6 +1338,10 @@ static bool8 DecompressGraphics(void)
         sPartyMenuInternal->switchCounter++;
         break;
     case 19:
+        LoadCompressedSpriteSheet(&sSpriteSheet_SpinnerArrow);
+        sPartyMenuInternal->switchCounter++;
+        break;
+    case 20:
         if (gPartyMenu.menuType == PARTY_MENU_TYPE_IN_BATTLE)
             LoadCompressedSpriteSheet(&sSpriteSheet_MoveTypes);
         sPartyMenuInternal->switchCounter = 0;
@@ -6117,6 +6145,95 @@ static void DestroyMessageWindowSprite(void)
     }
 }
 
+#define sDir    data[0]  // -1 = up, +1 = down
+#define sMode   data[1]
+#define sTimer  data[2]
+#define sStep   data[3]
+
+static const u8 sSpinnerArrowOffsets[] = {0, 1, 2, 1};
+
+static void SpriteCB_SpinnerArrow(struct Sprite *sprite)
+{
+    u8 stepFrames;
+
+    if (sprite->sMode == SPINNER_ARROW_STATIC)
+        return;
+
+    stepFrames = (sprite->sMode == SPINNER_ARROW_LOOP) ? SPINNER_ARROW_LOOP_FRAMES : SPINNER_ARROW_ANIM_FRAMES;
+    if (++sprite->sTimer < stepFrames)
+        return;
+
+    sprite->sTimer = 0;
+    if (++sprite->sStep >= (s16)ARRAY_COUNT(sSpinnerArrowOffsets))
+    {
+        sprite->sStep = 0;
+        if (sprite->sMode == SPINNER_ARROW_ANIM)
+            sprite->sMode = SPINNER_ARROW_STATIC;
+    }
+    sprite->y2 = sprite->sDir * sSpinnerArrowOffsets[sprite->sStep];
+}
+
+static void CreateSpinnerArrowSprites(s16 x, s16 y, u8 mode)
+{
+    int i;
+
+    for (i = 0; i < SPINNER_ARROW_SPRITES_COUNT; i++)
+    {
+        s8 dir = (i == SPINNER_ARROW_UP) ? -1 : 1;
+        u8 spriteId = CreateSprite(&sSpriteTemplate_SpinnerArrow, x, y + dir * SPINNER_ARROW_Y_OFFSET, 0);
+
+        if (spriteId != MAX_SPRITES)
+        {
+            StartSpriteAnim(&gSprites[spriteId], i);
+            gSprites[spriteId].sDir = dir;
+            gSprites[spriteId].sMode = mode;
+            sPartyMenuInternal->spinnerArrowSpriteIds[i] = spriteId;
+        }
+    }
+}
+
+static void DestroySpinnerArrowSprites(void)
+{
+    int i;
+
+    for (i = 0; i < ARRAY_COUNT(sPartyMenuInternal->spinnerArrowSpriteIds); i++)
+    {
+        if (sPartyMenuInternal->spinnerArrowSpriteIds[i] != MAX_SPRITES)
+        {
+            DestroySprite(&gSprites[sPartyMenuInternal->spinnerArrowSpriteIds[i]]);
+            sPartyMenuInternal->spinnerArrowSpriteIds[i] = MAX_SPRITES;
+        }
+    }
+}
+
+static void AnimateQuantitySpinner(void)
+{
+    u16 dpad = JOY_REPEAT(DPAD_ANY);
+    u8 arrowIdx, spriteId;
+
+    if (dpad == DPAD_UP || dpad == DPAD_RIGHT)
+        arrowIdx = SPINNER_ARROW_UP;
+    else if (dpad == DPAD_DOWN || dpad == DPAD_LEFT)
+        arrowIdx = SPINNER_ARROW_DOWN;
+    else
+        return;
+
+    spriteId = sPartyMenuInternal->spinnerArrowSpriteIds[arrowIdx];
+    if (spriteId == MAX_SPRITES || gSprites[spriteId].sMode != SPINNER_ARROW_STATIC)
+        return;
+
+    gSprites[spriteId].sMode = SPINNER_ARROW_ANIM;
+    gSprites[spriteId].sTimer = 0;
+    gSprites[spriteId].sStep = 0;
+}
+
+#undef sDir
+#undef sMode
+#undef sTimer
+#undef sStep
+
+#define QUANTITY_SPINNER_X      152
+
 static void CreateQuantityFrameSprites(void)
 {
     s16 x = 144;
@@ -6135,10 +6252,11 @@ static void CreateQuantityFrameSprites(void)
             StartSpriteAnim(&gSprites[spriteId], sQuantityFrameAnims[i]);
             SetSpriteSheetFrameTileNum(&gSprites[spriteId]);
             gSprites[spriteId].oam.priority = 1;
-            gSprites[spriteId].subpriority = 0;
+            gSprites[spriteId].subpriority = 1;
             sPartyMenuInternal->quantityFrameSpriteIds[i] = spriteId;
         }
     }
+    CreateSpinnerArrowSprites(QUANTITY_SPINNER_X, y, SPINNER_ARROW_STATIC);
 }
 
 static void DestroyQuantityFrameSprites(void)
@@ -6152,6 +6270,7 @@ static void DestroyQuantityFrameSprites(void)
             sPartyMenuInternal->quantityFrameSpriteIds[i] = MAX_SPRITES;
         }
     }
+    DestroySpinnerArrowSprites();
 }
 
 static void DestroySelectFrame(void)
@@ -10556,6 +10675,7 @@ static void Task_GiveHowManyItemsHandleInput(u8 taskId)
     if (AdjustQuantityAccordingToDPadInput(&tItemCount, tMaxItemQuantity) == TRUE)
     {
         PrintHowManyItemsWindow(taskId);
+        AnimateQuantitySpinner();
     }
     else
     {

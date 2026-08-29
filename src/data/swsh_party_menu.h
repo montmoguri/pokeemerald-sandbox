@@ -1176,6 +1176,53 @@ static const struct SpriteTemplate sSpriteTemplate_QuantityFrame =
     .anims = sSpriteAnimTable_QuantityFrame,
 };
 
+static const struct OamData sOamData_SpinnerArrow =
+{
+    .y = 0,
+    .affineMode = ST_OAM_AFFINE_OFF,
+    .objMode = ST_OAM_OBJ_NORMAL,
+    .mosaic = FALSE,
+    .bpp = ST_OAM_4BPP,
+    .size = SPRITE_SIZE(16x8),
+    .x = 0,
+    .matrixNum = 0,
+    .shape = SPRITE_SHAPE(16x8),
+    .tileNum = 0,
+    .priority = 1,
+    .paletteNum = 0,
+    .affineParam = 0,
+};
+
+static const union AnimCmd sSpriteAnim_SpinnerArrowUp[] = {
+    ANIMCMD_FRAME(0, 0, FALSE, FALSE),
+    ANIMCMD_END
+};
+static const union AnimCmd sSpriteAnim_SpinnerArrowDown[] = {
+    ANIMCMD_FRAME(0, 0, FALSE, TRUE),
+    ANIMCMD_END
+};
+
+static const union AnimCmd *const sSpriteAnimTable_SpinnerArrow[] = {
+    [SPINNER_ARROW_UP]   = sSpriteAnim_SpinnerArrowUp,
+    [SPINNER_ARROW_DOWN] = sSpriteAnim_SpinnerArrowDown,
+};
+
+static const struct CompressedSpriteSheet sSpriteSheet_SpinnerArrow =
+{
+    .data = gSpinnerArrowSwSh_Gfx,
+    .size = (16 * 8) / 2,
+    .tag = TAG_SPINNER_ARROW,
+};
+
+static const struct SpriteTemplate sSpriteTemplate_SpinnerArrow =
+{
+    .tileTag = TAG_SPINNER_ARROW,
+    .paletteTag = TAG_STATUS_ICONS,
+    .oam = &sOamData_SpinnerArrow,
+    .anims = sSpriteAnimTable_SpinnerArrow,
+    .callback = SpriteCB_SpinnerArrow,
+};
+
 static const struct SpritePalette sSpritePal_PartyMonShadow =
 {
     .data = gMonShadowSwSh_Pal,
