@@ -8824,9 +8824,38 @@ void ItemUseCB_FormChange_ConsumedOnUse(u8 taskId, TaskFunc task)
         RemoveBagItem(gSpecialVar_ItemId, 1);
 }
 
+static bool32 HasMultichoiceFormChange(struct Pokemon *mon)
+{
+    const struct FormChange *formChanges = GetSpeciesFormChanges(GetMonData(mon, MON_DATA_SPECIES));
+    u32 i;
+
+    if (formChanges == NULL)
+        return FALSE;
+
+    for (i = 0; formChanges[i].method != FORM_CHANGE_TERMINATOR; i++)
+    {
+        if (formChanges[i].method == FORM_CHANGE_ITEM_USE_MULTICHOICE
+         && formChanges[i].param1 == gSpecialVar_ItemId)
+            return TRUE;
+    }
+
+    return FALSE;
+}
+
 void ItemUseCB_RotomCatalog(u8 taskId, TaskFunc task)
 {
     PartyMenuRemoveWindow(&sPartyMenuInternal->windowId[0]);
+
+    if (!HasMultichoiceFormChange(&gParties[B_TRAINER_PLAYER][gPartyMenu.slotId]))
+    {
+        gPartyMenuUseExitCallback = FALSE;
+        PlaySE(SE_SELECT);
+        DisplayPartyMenuMessage(gText_WontHaveEffect, TRUE);
+        ScheduleBgCopyTilemapToVram(0);
+        gTasks[taskId].func = Task_ReturnToChooseMonAfterText;
+        return;
+    }
+
     SetPartyMonSelectionActions(gParties[B_TRAINER_PLAYER], gPartyMenu.slotId, ACTIONS_ROTOM_CATALOG);
     DisplaySelectionWindow(PARTYWIN_CATALOG);
     gTasks[taskId].data[0] = 0xFF;
@@ -8905,6 +8934,17 @@ static void CursorCb_CatalogMower(u8 taskId)
 void ItemUseCB_ZygardeCube(u8 taskId, TaskFunc task)
 {
     PartyMenuRemoveWindow(&sPartyMenuInternal->windowId[0]);
+
+    if (!HasMultichoiceFormChange(&gParties[B_TRAINER_PLAYER][gPartyMenu.slotId]))
+    {
+        gPartyMenuUseExitCallback = FALSE;
+        PlaySE(SE_SELECT);
+        DisplayPartyMenuMessage(gText_WontHaveEffect, TRUE);
+        ScheduleBgCopyTilemapToVram(0);
+        gTasks[taskId].func = Task_ReturnToChooseMonAfterText;
+        return;
+    }
+
     SetPartyMonSelectionActions(gParties[B_TRAINER_PLAYER], gPartyMenu.slotId, ACTIONS_ZYGARDE_CUBE);
     DisplaySelectionWindow(PARTYWIN_ZYGARDE_CUBE);
     gTasks[taskId].data[0] = 0xFF;
