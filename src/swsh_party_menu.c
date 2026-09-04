@@ -179,6 +179,9 @@ enum {
 #define SPINNER_ARROW_LOOP_FRAMES       8
 #define SPINNER_ARROW_ANIM_FRAMES       3
 
+#define BG_PARTY_SLOTS 1
+#define BG_PARTY_HELD  0
+
 #define PARTY_PAL_SELECTED     (1 << 0)
 #define PARTY_PAL_FAINTED      (1 << 1) // unused in swsh party menu
 #define PARTY_PAL_TO_SWITCH    (1 << 2)
@@ -260,6 +263,9 @@ struct PartyMenuInternal
     u8 comfyAnimX;
     u8 comfyAnimY;
     u8 comfyAnimBob;
+    u8 comfyAnimHeld;        // lifted party slot - vertical slide during switching
+    s16 heldSlotOffset;      // pixels the lifted party slot is displaced from the row it came from
+    s16 heldSlotScroll;
 
     // Item mode (activated by selecting Item in mon menu)
     bool8 inItemMode;
@@ -748,6 +754,9 @@ static void InitPartyMenu(u8 menuType, u8 layout, u8 partyAction, bool8 keepCurs
         sPartyMenuInternal->comfyAnimX = INVALID_COMFY_ANIM;
         sPartyMenuInternal->comfyAnimY = INVALID_COMFY_ANIM;
         sPartyMenuInternal->comfyAnimBob = INVALID_COMFY_ANIM;
+        sPartyMenuInternal->comfyAnimHeld = INVALID_COMFY_ANIM;
+        sPartyMenuInternal->heldSlotOffset = 0;
+        sPartyMenuInternal->heldSlotScroll = 0;
         if (!keepCursorPos)
             gPartyMenu.slotId = 0;
 
@@ -787,7 +796,7 @@ static void CB2_UpdatePartyMenu(void)
 
     AdvanceComfyAnimations();
 
-    if (cursorSpriteId != MAX_SPRITES)
+    if (sPartyMenuInternal != NULL && cursorSpriteId != MAX_SPRITES)
     {
         if (sPartyMenuInternal->comfyAnimX != INVALID_COMFY_ANIM)
             gSprites[cursorSpriteId].x = ReadComfyAnimValueSmooth(&gComfyAnims[sPartyMenuInternal->comfyAnimX]);
@@ -796,6 +805,8 @@ static void CB2_UpdatePartyMenu(void)
     }
     AnimateSprites();
     BuildOamBuffer();
+    if (sPartyMenuInternal != NULL)
+        sPartyMenuInternal->heldSlotScroll = sPartyMenuInternal->heldSlotOffset;
     DoScheduledBgTilemapCopiesToVram();
     UpdatePaletteFade();
 }
@@ -807,6 +818,8 @@ static void VBlankCB_PartyMenu(void)
     TransferPlttBuffer();
     ChangeBgX(3, 64, BG_COORD_ADD);
     ChangeBgY(3, 64, BG_COORD_ADD);
+    if (sPartyMenuInternal != NULL)
+        ChangeBgY(BG_PARTY_HELD, Q_24_8(-sPartyMenuInternal->heldSlotScroll), BG_COORD_SET);
     if (sMonSpriteId != 0 && sMonSpriteId != MAX_SPRITES)
         RunMonAnimTimer();
 }
@@ -1394,7 +1407,9 @@ static void FreePartyPointers(void)
         ReleaseComfyAnim(sPartyMenuInternal->comfyAnimX);
         ReleaseComfyAnim(sPartyMenuInternal->comfyAnimY);
         ReleaseComfyAnim(sPartyMenuInternal->comfyAnimBob);
+        ReleaseComfyAnim(sPartyMenuInternal->comfyAnimHeld);
         Free(sPartyMenuInternal);
+        sPartyMenuInternal = NULL;
     }
     if (sPartyBgTilemapBuffer)
         Free(sPartyBgTilemapBuffer);
@@ -3836,9 +3851,6 @@ void CB2_ReturnToPartyMenuFromSummaryScreen(void)
     InitPartyMenu(gPartyMenu.menuType, KEEP_PARTY_LAYOUT, gPartyMenu.action, TRUE, PARTY_MSG_DO_WHAT_WITH_MON, Task_TryCreateSelectionWindow, gPartyMenu.exitCallback);
 }
 
-#define BG_PARTY_SLOTS 1
-#define BG_PARTY_HELD  0
-
 static void SetPartySlotSpriteLifted(struct PartyMenuBox *menuBox, bool8 lifted)
 {
     u8 spriteIds[3] = { menuBox->monSpriteId, menuBox->itemSpriteId, menuBox->statusSpriteId };
@@ -3893,12 +3905,9 @@ static void CursorCb_Switch(u8 taskId)
     ScheduleBgCopyTilemapToVram(BG_PARTY_SLOTS);
     SetPartySlotSpriteLifted(&sPartyMenuBoxes[gPartyMenu.slotId], TRUE);
 
+    sPartyMenuInternal->heldSlotOffset = 0;
     gTasks[taskId].func = Task_HandleInput_PartySlotHeld;
 }
-
-#define tHeldTop    data[0]
-#define tHeldOffset data[1]
-#define tDir        data[2]
 
 static void Task_HandleInput_PartySlotHeld(u8 taskId)
 {
@@ -3941,33 +3950,48 @@ static void UpdatePartySlotHoverHighlight(s8 oldHover, s8 newHover)
         AnimatePartySlot(newHover, 1);
 }
 
+static s16 PartySlotHoverOffset(s8 hover)
+{
+    s16 originTop = GetWindowAttribute(sPartyMenuBoxes[gPartyMenu.slotId].windowId, WINDOW_TILEMAP_TOP);
+    s16 hoverTop = GetWindowAttribute(sPartyMenuBoxes[hover].windowId, WINDOW_TILEMAP_TOP);
+
+    return (hoverTop - originTop) * TILE_HEIGHT;
+}
+
+static void SetPartySlotHoverOffset(s16 offset)
+{
+    MovePartyMenuBoxSpritesVertical(&sPartyMenuBoxes[gPartyMenu.slotId], offset - sPartyMenuInternal->heldSlotOffset);
+    sPartyMenuInternal->heldSlotOffset = offset;
+}
+
 static void SnapPartySlotHover(s8 newHover)
 {
-    struct PartyMenuBox *originBox = &sPartyMenuBoxes[gPartyMenu.slotId];
-    u8 fromWindowId = sPartyMenuBoxes[gPartyMenu.slotId2].windowId;
-    u8 toWindowId = sPartyMenuBoxes[newHover].windowId;
-    u8 left = GetWindowAttribute(toWindowId, WINDOW_TILEMAP_LEFT);
-    u8 fromTop = GetWindowAttribute(fromWindowId, WINDOW_TILEMAP_TOP);
-    u8 toTop = GetWindowAttribute(toWindowId, WINDOW_TILEMAP_TOP);
-    u8 width = GetWindowAttribute(toWindowId, WINDOW_WIDTH);
-    u8 height = GetWindowAttribute(toWindowId, WINDOW_HEIGHT);
-
-    FillBgTilemapBufferRect_Palette0(BG_PARTY_HELD, 0, left + 1, fromTop - 1, width, height);
-    CopyRectToBgTilemapBufferRect(BG_PARTY_HELD, sSlot1TilemapBuffer, 0, 0, width, height, left + 1, toTop - 1, width, height, 17, 0, 0);
-    ScheduleBgCopyTilemapToVram(BG_PARTY_HELD);
-    MovePartyMenuBoxSpritesVertical(originBox, (s16)(toTop - fromTop) * 8);
-
+    SetPartySlotHoverOffset(PartySlotHoverOffset(newHover));
     UpdatePartySlotHoverHighlight(gPartyMenu.slotId2, newHover);
     gPartyMenu.slotId2 = newHover;
 }
 
+#define HELD_SLOT_SLIDE_FRAMES 6
+
 static void BeginPartySlotHoverStep(u8 taskId, s8 newHover)
 {
-    s16 *data = gTasks[taskId].data;
-    u8 fromWindowId = sPartyMenuBoxes[gPartyMenu.slotId2].windowId;
-    tHeldTop = GetWindowAttribute(fromWindowId, WINDOW_TILEMAP_TOP);
-    tHeldOffset = 0;
-    tDir = (newHover > gPartyMenu.slotId2) ? 1 : -1;
+    struct ComfyAnimEasingConfig config = {
+        .from = Q_24_8(sPartyMenuInternal->heldSlotOffset),
+        .to = Q_24_8(PartySlotHoverOffset(newHover)),
+        .durationFrames = HELD_SLOT_SLIDE_FRAMES,
+        .easingFunc = ComfyAnimEasing_EaseOutCubic,
+    };
+
+    if (sPartyMenuInternal->comfyAnimHeld == INVALID_COMFY_ANIM)
+        sPartyMenuInternal->comfyAnimHeld = CreateComfyAnim_Easing(&config);
+    else
+        InitComfyAnim_Easing(&config, &gComfyAnims[sPartyMenuInternal->comfyAnimHeld]);
+
+    if (sPartyMenuInternal->comfyAnimHeld == INVALID_COMFY_ANIM)
+    {
+        SnapPartySlotHover(newHover);
+        return;
+    }
 
     UpdatePartySlotHoverHighlight(gPartyMenu.slotId2, newHover);
     gPartyMenu.slotId2 = newHover;
@@ -3976,39 +4000,29 @@ static void BeginPartySlotHoverStep(u8 taskId, s8 newHover)
 
 static void Task_SlidePartySlotHover(u8 taskId)
 {
-    s16 *data = gTasks[taskId].data;
-    u8 windowId = sPartyMenuBoxes[gPartyMenu.slotId].windowId;
-    u8 left = GetWindowAttribute(windowId, WINDOW_TILEMAP_LEFT);
-    u8 width = GetWindowAttribute(windowId, WINDOW_WIDTH);
-    u8 height = GetWindowAttribute(windowId, WINDOW_HEIGHT);
+    struct ComfyAnim *anim = &gComfyAnims[sPartyMenuInternal->comfyAnimHeld];
 
-    FillBgTilemapBufferRect_Palette0(BG_PARTY_HELD, 0, left + 1, tHeldTop - 1 + tHeldOffset, width, height);
-    CopyRectToBgTilemapBufferRect(BG_PARTY_HELD, sSlot1TilemapBuffer, 0, 0, width, height, left + 1, tHeldTop - 1 + tHeldOffset + tDir, width, height, 17, 0, 0);
-    MovePartyMenuBoxSpritesVertical(&sPartyMenuBoxes[gPartyMenu.slotId], tDir * 8);
-    ScheduleBgCopyTilemapToVram(BG_PARTY_HELD);
+    SetPartySlotHoverOffset(ReadComfyAnimValueSmooth(anim));
 
-    tHeldOffset += tDir;
-    if (tHeldOffset == tDir * (s16)height)
+    if (anim->completed)
         gTasks[taskId].func = Task_HandleInput_PartySlotHeld;
 }
 
-#undef tHeldTop
-#undef tHeldOffset
-#undef tDir
+#undef HELD_SLOT_SLIDE_FRAMES
 
-// Lands the held mon's art back onto BG1 and releases BG0. If confirming on a
-// different slot than the one the drag started on, the mon currently hovered over
-// goes back to the origin slot and the held mon settles into the hovered slot.
+static void Task_ReleaseHeldSlotScroll(u8 taskId)
+{
+    sPartyMenuInternal->heldSlotOffset = 0;
+    gTasks[taskId].func = Task_HandleChooseMonInput;
+}
+
 static void FinishPartySlotDrop(u8 taskId, bool8 confirm)
 {
     struct PartyMenuBox *heldBox = &sPartyMenuBoxes[gPartyMenu.slotId];
-    // The BG0 copy currently sits wherever the hover cursor (slotId2) last landed,
-    // not at the origin slot - clear it from there, not from the origin's row.
-    u8 hoverWindowId = sPartyMenuBoxes[gPartyMenu.slotId2].windowId;
-    u8 left = GetWindowAttribute(hoverWindowId, WINDOW_TILEMAP_LEFT);
-    u8 top = GetWindowAttribute(hoverWindowId, WINDOW_TILEMAP_TOP);
-    u8 width = GetWindowAttribute(hoverWindowId, WINDOW_WIDTH);
-    u8 height = GetWindowAttribute(hoverWindowId, WINDOW_HEIGHT);
+    u8 left = GetWindowAttribute(heldBox->windowId, WINDOW_TILEMAP_LEFT);
+    u8 top = GetWindowAttribute(heldBox->windowId, WINDOW_TILEMAP_TOP);
+    u8 width = GetWindowAttribute(heldBox->windowId, WINDOW_WIDTH);
+    u8 height = GetWindowAttribute(heldBox->windowId, WINDOW_HEIGHT);
 
     FillBgTilemapBufferRect_Palette0(BG_PARTY_HELD, 0, left + 1, top - 1, width, height);
     CopyBgTilemapBufferToVram(BG_PARTY_HELD);
@@ -4049,6 +4063,7 @@ static void FinishPartySlotDrop(u8 taskId, bool8 confirm)
 
     CopyBgTilemapBufferToVram(BG_PARTY_SLOTS);
     FinishTwoMonAction(taskId);
+    gTasks[taskId].func = Task_ReleaseHeldSlotScroll;
 }
 
 // returns FALSE if the slot has slid fully offscreen / back onscreen
