@@ -9399,7 +9399,7 @@ static void Task_ContinueChoosingHalfParty(u8 taskId)
     if ((JOY_NEW(A_BUTTON)) || (JOY_NEW(B_BUTTON)))
     {
         PlaySE(SE_SELECT);
-        gTasks[taskId].func = Task_HandleChooseMonInput;
+        Task_ReturnToChooseMonAfterText(taskId);
     }
 }
 
