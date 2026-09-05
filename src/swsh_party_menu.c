@@ -391,7 +391,7 @@ static void DisplayPartyPokemonDataForBattlePyramidHeldItem(u8);
 static bool8 DisplayPartyPokemonDataForItemOrTutor(u8);
 static void DisplayPartyPokemonData(u8);
 static void DisplayPartyPokemonNickname(struct Pokemon *, struct PartyMenuBox *, u8);
-static void DisplayPartyPokemonLevelCheck(struct Pokemon *, struct PartyMenuBox *, u8);
+static void DisplayPartyPokemonLevelCheck(struct Pokemon *, struct PartyMenuBox *);
 static void DisplayPartyPokemonGenderNidoranCheck(struct Pokemon *, struct PartyMenuBox *, u8);
 static void DisplayPartyPokemonHPCheck(struct Pokemon *, struct PartyMenuBox *, bool8);
 static void DisplayPartyPokemonHPBarCheck(struct Pokemon *, struct PartyMenuBox *);
@@ -1518,7 +1518,7 @@ static void DisplayPartyPokemonData(u8 slot)
     {
         BlitBitmapToPartyWindow_SwSh(sPartyMenuBoxes[slot].windowId, 0, 0, 0, 0, FALSE);
         DisplayPartyPokemonNickname(mon, &sPartyMenuBoxes[slot], 0);
-        DisplayPartyPokemonLevelCheck(mon, &sPartyMenuBoxes[slot], 0);
+        DisplayPartyPokemonLevelCheck(mon, &sPartyMenuBoxes[slot]);
         DisplayPartyPokemonGenderNidoranCheck(mon, &sPartyMenuBoxes[slot], 0);
         DisplayPartyPokemonHPCheck(mon, &sPartyMenuBoxes[slot], FALSE);
         DisplayPartyPokemonHPBarCheck(mon, &sPartyMenuBoxes[slot]);
@@ -1533,7 +1533,7 @@ static void DisplayPartyPokemonDescriptionData(u8 slot, u8 stringID)
     DisplayPartyPokemonNickname(mon, &sPartyMenuBoxes[slot], 0);
     if (!GetMonData(mon, MON_DATA_IS_EGG))
     {
-        DisplayPartyPokemonLevelCheck(mon, &sPartyMenuBoxes[slot], 0);
+        DisplayPartyPokemonLevelCheck(mon, &sPartyMenuBoxes[slot]);
         DisplayPartyPokemonGenderNidoranCheck(mon, &sPartyMenuBoxes[slot], 0);
     }
     DisplayPartyPokemonDescriptionText(stringID, &sPartyMenuBoxes[slot], 0);
@@ -3200,6 +3200,17 @@ static void BlitBitmapToPartyWindow_SwSh(u8 windowId, u8 x, u8 y, u8 width, u8 h
     BlitBitmapToPartyWindow(windowId, sSlotTilemap_Main_SwSh, 14, x, y, width, height);
 }
 
+static void PartySlotClearRect(u8 windowId, const struct PartyBoxRect *rect, bool8 hideHP)
+{
+    if (rect->width == 0 || rect->height == 0)
+        return;
+
+    BlitBitmapToPartyWindow_SwSh(windowId, rect->x >> 3, rect->y >> 3,
+                                 ((rect->x % 8) + rect->width + 7) / 8,
+                                 ((rect->y % 8) + rect->height + 7) / 8,
+                                 hideHP);
+}
+
 static void DrawEmptySlot(u8 windowId)
 {
     BlitBitmapToPartyWindow(windowId, sSlotTilemap_Empty_SwSh, 14, 0, 0, 14, 3);
@@ -3278,25 +3289,16 @@ static void DisplayPartyPokemonNickname(struct Pokemon *mon, struct PartyMenuBox
     if (GetMonData(mon, MON_DATA_SPECIES) != SPECIES_NONE)
     {
         if (c == 1)
-            BlitBitmapToPartyWindow_SwSh(menuBox->windowId, sPartySlotLayout.nickname.x >> 3, sPartySlotLayout.nickname.y >> 3, sPartySlotLayout.nickname.width >> 3, sPartySlotLayout.nickname.height >> 3, FALSE);
+            PartySlotClearRect(menuBox->windowId, &sPartySlotLayout.nickname, FALSE);
         GetMonNickname(mon, nickname);
         DisplayPartyPokemonBarDetailToFit(menuBox->windowId, nickname, 0, &sPartySlotLayout.nickname, 50);
     }
 }
 
-static void DisplayPartyPokemonLevelCheck(struct Pokemon *mon, struct PartyMenuBox *menuBox, u8 c)
+static void DisplayPartyPokemonLevelCheck(struct Pokemon *mon, struct PartyMenuBox *menuBox)
 {
     if (GetMonData(mon, MON_DATA_SPECIES) != SPECIES_NONE)
-    {
-        u8 ailment = GetMonAilment(mon);
-        if (ailment == AILMENT_NONE || ailment == AILMENT_PKRS)
-        {
-            if (c != 0)
-                BlitBitmapToPartyWindow_SwSh(menuBox->windowId, sPartySlotLayout.level.x >> 3, (sPartySlotLayout.level.y >> 3) + 1, sPartySlotLayout.level.width >> 3, sPartySlotLayout.level.height >> 3, FALSE);
-            if (c != 2)
-                DisplayPartyPokemonLevel(GetMonData(mon, MON_DATA_LEVEL), menuBox);
-        }
-    }
+        DisplayPartyPokemonLevel(GetMonData(mon, MON_DATA_LEVEL), menuBox);
 }
 
 static void DisplayPartyPokemonLevel(u8 level, struct PartyMenuBox *menuBox)
@@ -3312,7 +3314,7 @@ static void DisplayPartyPokemonGenderNidoranCheck(struct Pokemon *mon, struct Pa
     u8 nickname[POKEMON_NAME_LENGTH + 1];
 
     if (c == 1)
-        BlitBitmapToPartyWindow_SwSh(menuBox->windowId, sPartySlotLayout.gender.x >> 3, (sPartySlotLayout.gender.y >> 3) + 1, sPartySlotLayout.gender.width >> 3, sPartySlotLayout.gender.height >> 3, FALSE);
+        PartySlotClearRect(menuBox->windowId, &sPartySlotLayout.gender, FALSE);
     GetMonNickname(mon, nickname);
     DisplayPartyPokemonGender(GetMonGender(mon), GetMonData(mon, MON_DATA_SPECIES), nickname, menuBox, menuBox->windowId == gPartyMenu.slotId);
 }
@@ -3390,15 +3392,15 @@ static void RedrawPartyMonInfo(struct Pokemon *mon, struct PartyMenuBox *menuBox
         ExpandBoundingRect(&left, &top, &right, &bottom, &sPartySlotLayout.gender);
 
     if (left < right && top < bottom)
-       BlitBitmapToPartyWindow_SwSh(menuBox->windowId, left >> 3, top >> 3,
-                                    ((right - 1) >> 3) - (left >> 3) + 1,
-                                    ((bottom - 1) >> 3) - (top >> 3) + 1,
-                                    FALSE);
+    {
+        struct PartyBoxRect bounds = { left, top, right - left, bottom - top };
+        PartySlotClearRect(menuBox->windowId, &bounds, FALSE);
+    }
 
     if (redrawHp)
         DisplayPartyPokemonHP(GetMonData(mon, MON_DATA_HP), GetMonData(mon, MON_DATA_MAX_HP), menuBox);
     if (redrawLevel)
-        DisplayPartyPokemonLevelCheck(mon, menuBox, 0);
+        DisplayPartyPokemonLevelCheck(mon, menuBox);
     if (redrawGender)
         DisplayPartyPokemonGenderNidoranCheck(mon, menuBox, 0);
 
@@ -3478,9 +3480,7 @@ static void DisplayPartyPokemonDescriptionText(u8 stringID, struct PartyMenuBox 
 {
     if (c)
     {
-        int width = ((sPartySlotLayout.descText.x % 8) + sPartySlotLayout.descText.width + 7) / 8;
-        int height = ((sPartySlotLayout.descText.y % 8) + sPartySlotLayout.descText.height + 7) / 8;
-        BlitBitmapToPartyWindow_SwSh(menuBox->windowId, sPartySlotLayout.descText.x >> 3, sPartySlotLayout.descText.y >> 3, width, height, TRUE);
+        PartySlotClearRect(menuBox->windowId, &sPartySlotLayout.descText, TRUE);
 
         // Redraw nickname, gender, and level after clearing area for description area (for SWSH layout where their windows overlap)
         u8 slot = menuBox->windowId;
@@ -3489,7 +3489,7 @@ static void DisplayPartyPokemonDescriptionText(u8 stringID, struct PartyMenuBox 
         {
             DisplayPartyPokemonNickname(mon, menuBox, 0);
             DisplayPartyPokemonGenderNidoranCheck(mon, menuBox, 0);
-            DisplayPartyPokemonLevelCheck(mon, menuBox, 0);
+            DisplayPartyPokemonLevelCheck(mon, menuBox);
         }
     }
     if (c != 2)
@@ -6763,8 +6763,6 @@ void ItemUseCB_Medicine(u8 taskId, TaskFunc task)
         PlaySE(SE_GLASS_FLUTE);
     }
     SetPartyMonAilmentGfx(mon, &sPartyMenuBoxes[gPartyMenu.slotId]);
-    if (gSprites[sPartyMenuBoxes[gPartyMenu.slotId].statusSpriteId].invisible)
-        DisplayPartyPokemonLevelCheck(mon, &sPartyMenuBoxes[gPartyMenu.slotId], 1);
     if (canHeal == TRUE)
     {
         if (hp == 0)
@@ -7989,8 +7987,6 @@ static void UseSacredAsh(u8 taskId)
 
     PlaySE(SE_USE_ITEM);
     SetPartyMonAilmentGfx(mon, &sPartyMenuBoxes[gPartyMenu.slotId]);
-    if (gSprites[sPartyMenuBoxes[gPartyMenu.slotId].statusSpriteId].invisible)
-        DisplayPartyPokemonLevelCheck(mon, &sPartyMenuBoxes[gPartyMenu.slotId], 1);
     AnimatePartySlot(sPartyMenuInternal->tLastSlotUsed, 0);
     AnimatePartySlot(gPartyMenu.slotId, 1);
     PartyMenuModifyHP(taskId, gPartyMenu.slotId, 1, GetMonData(mon, MON_DATA_HP) - hp, Task_SacredAshDisplayHPRestored);
@@ -10914,7 +10910,7 @@ static void Task_FirstBattleEnterParty_WaitFadeNormal(u8 taskId)
 }
 
 #if TESTING
-// I'm just here so I won't get fined. 
+// I'm just here so I won't get fined.
 s8 Test_UpdatePartySelectionSingleLayout(s8 slotId, s8 movementDir, bool8 chooseHalf, u8 lastSelectedSlot)
 {
     (void)chooseHalf;
